@@ -30,8 +30,8 @@
       "providers/*": ["src/providers/*"],
       "routes": ["src/routes/index"],
       "routes/*": ["src/routes/*"],
-      "store": ["src/store/index"],
-      "store/*": ["src/store/*"],
+      "stores": ["src/stores/index"],
+      "stores/*": ["src/stores/*"],
       "style": ["src/style/index"],
       "style/*": ["src/style/*"],
       "template": ["src/template/index"],
@@ -43,7 +43,7 @@
       "assets": ["src/assets/index"],
       "assets/*": ["src/assets/*"],
       "i18n": ["src/i18n/index"],
-      "i18n/*": ["src/i18n/*"]
+      "i18n/*": ["src/i18n/*"],
     }
   },
   "include": ["src"],

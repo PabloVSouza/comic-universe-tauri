@@ -1,0 +1,17 @@
+@layer components {
+  .wallpaper-fade-enter {
+    @apply opacity-0;
+  }
+
+  .wallpaper-fade-enter-active {
+    @apply opacity-100 transition-opacity duration-300 ease-linear;
+  }
+
+  .wallpaper-fade-exit {
+    @apply opacity-100;
+  }
+
+  .wallpaper-fade-exit-active {
+    @apply opacity-0 transition-opacity duration-300 ease-linear;
+  }
+}

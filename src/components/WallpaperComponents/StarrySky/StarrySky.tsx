@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react'
+import React, { useRef, useEffect, FC } from 'react'
 
 interface Position {
   x: number
@@ -309,7 +309,7 @@ const MeteorShower: React.FC = () => {
   )
 }
 
-const StarrySky: React.FC = () => {
+export const StarrySky: FC = () => {
   const [stars, setStars] = React.useState<StarProps[]>([])
 
   React.useEffect(() => {
@@ -486,5 +486,3 @@ const StarrySky: React.FC = () => {
     </div>
   )
 }
-
-export default StarrySky
