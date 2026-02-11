@@ -12,6 +12,7 @@
     "db:sync-has-offline": "node scripts/sync-chapter-has-offline.mjs"
   },
   "dependencies": {
+    "@pablovsouza/react-window-manager": "^0.5.2",
     "@fontsource/roboto": "^5.2.9",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-query": "^5.90.20",

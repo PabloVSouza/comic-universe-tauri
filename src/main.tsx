@@ -6,7 +6,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18n'
 import Routes from 'routes'
 import 'style/style.css'
-import { ThemeProvider, WallpaperProvider, WindowProvider } from 'providers'
+import { WindowProvider } from '@pablovsouza/react-window-manager'
+import { ThemeProvider, WallpaperProvider } from 'providers'
+import { windowRegistry } from 'windows'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,7 +28,7 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
         <ThemeProvider>
           <HashRouter>
             <WallpaperProvider>
-              <WindowProvider>
+              <WindowProvider registry={windowRegistry}>
                 <Routes />
               </WindowProvider>
             </WallpaperProvider>

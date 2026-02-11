@@ -2,7 +2,7 @@ import { BgBox } from 'components'
 import { ComponentProps, FC } from 'react'
 import { cn } from 'utils'
 import { Button } from 'components/ui/button'
-import { useOpenWindow } from 'stores/window-manager'
+import { useOpenWindow } from '@pablovsouza/react-window-manager'
 
 export const MainContent: FC<ComponentProps<'div'>> = ({ className, ...props }) => {
   const openWindow = useOpenWindow()
