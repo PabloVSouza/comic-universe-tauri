@@ -1,0 +1,51 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "components": ["src/components/index"],
+      "components/*": ["src/components/*"],
+      "hooks": ["src/hooks/index"],
+      "hooks/*": ["src/hooks/*"],
+      "providers": ["src/providers/index"],
+      "providers/*": ["src/providers/*"],
+      "routes": ["src/routes/index"],
+      "routes/*": ["src/routes/*"],
+      "store": ["src/store/index"],
+      "store/*": ["src/store/*"],
+      "style": ["src/style/index"],
+      "style/*": ["src/style/*"],
+      "template": ["src/template/index"],
+      "template/*": ["src/template/*"],
+      "utils": ["src/utils/index"],
+      "utils/*": ["src/utils/*"],
+      "windows": ["src/windows/index"],
+      "windows/*": ["src/windows/*"],
+      "assets": ["src/assets/index"],
+      "assets/*": ["src/assets/*"],
+      "i18n": ["src/i18n/index"],
+      "i18n/*": ["src/i18n/*"]
+    }
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}

@@ -1,0 +1,16 @@
+node_modules
+dist
+out
+.gitignore
+
+# Tauri
+src-tauri
+src-tauri/target
+src-tauri/gen
+src-tauri/Cargo.lock
+
+# Build outputs
+*.exe
+*.dll
+*.so
+*.dylib

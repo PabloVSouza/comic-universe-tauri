@@ -1,0 +1,18 @@
+out
+dist
+pnpm-lock.yaml
+LICENSE.md
+tsconfig.json
+tsconfig.*.json
+
+# Tauri (Rust code - Prettier não formata Rust)
+src-tauri
+src-tauri/target
+src-tauri/gen
+src-tauri/Cargo.lock
+
+# Build outputs
+*.exe
+*.dll
+*.so
+*.dylib
