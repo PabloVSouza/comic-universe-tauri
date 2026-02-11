@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18n from 'i18n'
 import Routes from 'routes'
 import 'style/style.css'
-import { ThemeProvider, WallpaperProvider } from 'providers'
+import { ThemeProvider, WallpaperProvider, WindowProvider } from 'providers'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,13 +23,15 @@ ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>
-        <HashRouter>
-          <ThemeProvider>
+        <ThemeProvider>
+          <HashRouter>
             <WallpaperProvider>
-              <Routes />
+              <WindowProvider>
+                <Routes />
+              </WindowProvider>
             </WallpaperProvider>
-          </ThemeProvider>
-        </HashRouter>
+          </HashRouter>
+        </ThemeProvider>
       </I18nextProvider>
     </QueryClientProvider>
   </React.StrictMode>
