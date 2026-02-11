@@ -20,9 +20,7 @@ const testWindowModule: WindowModule<TestWindowProps> = {
   TestWindow,
   windowProps: {
     contentClassName: 'h-full w-full',
-    closeable: true,
-    minimizable: false,
-    titleBar: false,
+
     unique: true,
     title: 'Test Window'
   },

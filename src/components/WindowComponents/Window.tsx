@@ -73,6 +73,7 @@ export function Window({ window, children }: WindowProps) {
               return
             }
 
+            event.preventDefault()
             setWindowMoving(id, true)
           }}
           onDoubleClick={() => {
@@ -159,6 +160,7 @@ export function Window({ window, children }: WindowProps) {
               return
             }
 
+            event.preventDefault()
             setWindowResizing(id, true)
           }}
           aria-label="Resize window"

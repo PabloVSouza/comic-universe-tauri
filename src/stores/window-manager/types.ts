@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { HtmlPortalNode } from 'react-reverse-portal'
 
 export type WindowStartPosition =
@@ -77,7 +77,7 @@ export type WindowManagerStore = {
   windows: WindowInstance[]
   containerSize: { width: number; height: number }
   setContainerSize: (size: { width: number; height: number }) => void
-  mouseCapture: (event: ReactMouseEvent<HTMLDivElement, MouseEvent>) => void
+  mouseCapture: (event: { movementX: number; movementY: number }) => void
   removeMovingResizing: () => void
   openWindow: (params: WindowCreateParams) => string
   closeWindow: (id: string) => void

@@ -34,15 +34,36 @@ export function WindowManager() {
 
   const activeWindows = windows.filter((window) => !window.windowStatus.isMinimized)
   const minimizedWindows = windows.filter((window) => window.windowStatus.isMinimized)
+  const isInteracting = windows.some(
+    (window) => window.windowStatus.isMoving || window.windowStatus.isResizing
+  )
+
+  useEffect(() => {
+    if (!isInteracting) {
+      return
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      mouseCapture(event)
+    }
+
+    const stopInteraction = () => {
+      removeMovingResizing()
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', stopInteraction)
+    window.addEventListener('blur', stopInteraction)
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseup', stopInteraction)
+      window.removeEventListener('blur', stopInteraction)
+    }
+  }, [isInteracting, mouseCapture, removeMovingResizing])
 
   return (
-    <div
-      ref={containerRef}
-      className="pointer-events-none fixed inset-0 z-[100]"
-      onMouseMoveCapture={mouseCapture}
-      onMouseUp={removeMovingResizing}
-      onMouseLeave={removeMovingResizing}
-    >
+    <div ref={containerRef} className="pointer-events-none fixed inset-0 z-[100]">
       {windows.map((window) => (
         <InPortal key={`portal-${window.id}`} node={window.portalNode}>
           {window.content}
