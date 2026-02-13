@@ -40,6 +40,16 @@ export interface ChapterPagesResponse {
   pages: ChapterPage[];
 }
 
+export interface MarkChaptersPayload {
+  chapterIds: string[];
+  read: boolean;
+}
+
+export interface MarkChaptersResponse {
+  updated: number;
+  skipped: number;
+}
+
 export interface ComicData {
   name?: string;
   synopsis?: string;
@@ -154,6 +164,15 @@ export async function migrateLegacyDatabase(
 
 export async function getChapterPages(chapterId: string): Promise<ChapterPagesResponse> {
   return requestJson<ChapterPagesResponse>(`${runtimeApiBaseUrl}/chapters/${chapterId}/pages`);
+}
+
+export async function markChaptersReadState(
+  payload: MarkChaptersPayload,
+): Promise<MarkChaptersResponse> {
+  return requestJson<MarkChaptersResponse>(`${runtimeApiBaseUrl}/chapters/mark`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getChapterPageUrl(chapterId: string, pageIndex: number): string {

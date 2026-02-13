@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "comic-universe-tauri",
+  "productName": "Comic Universe",
   "version": "0.1.0",
   "identifier": "com.comic-universe",
   "build": {
@@ -13,7 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
       {
-        "title": "comic-universe-tauri",
+        "title": "Comic Universe",
         "width": 1000,
         "height": 700,
         "minWidth": 800,

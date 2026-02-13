@@ -79,5 +79,38 @@
         "failed": "Não foi possível criar a conta."
       }
     }
+  },
+  "mainContent": {
+    "nav": {
+      "actions": {
+        "download": "Baixar"
+      }
+    },
+    "chapterTable": {
+      "headers": {
+        "chapter": "Capítulo",
+        "name": "Nome",
+        "progress": "Progresso",
+        "read": "Lido"
+      },
+      "actions": {
+        "selectAllChapters": "Selecionar todos os capítulos",
+        "unselectAllChapters": "Desselecionar todos os capítulos",
+        "selectAll": "Selecionar tudo",
+        "unselectAll": "Desselecionar tudo",
+        "selectChapter": "Selecionar capítulo",
+        "unselectChapter": "Desselecionar capítulo",
+        "markRead": "Marcar como lido",
+        "markUnread": "Marcar como não lido"
+      },
+      "bulk": {
+        "selectedCount_one": "{{count}} selecionado",
+        "selectedCount_other": "{{count}} selecionados",
+        "clear": "Limpar",
+        "markRead": "Marcar lido",
+        "markUnread": "Marcar não lido"
+      },
+      "empty": "Nenhum capítulo encontrado."
+    }
   }
 }

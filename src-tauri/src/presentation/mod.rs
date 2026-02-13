@@ -12,7 +12,7 @@ use std::{
 use axum::{
     extract::{Path, Query, State},
     http::{header, StatusCode},
-    response::IntoResponse,
+    response::{IntoResponse, Redirect, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -23,6 +23,7 @@ use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use zip::ZipArchive;
+use serde_json::Value;
 
 use crate::{
     application::{AdminService, DocumentService},
@@ -31,7 +32,8 @@ use crate::{
 pub use dto::ApiEndpointPayload;
 use dto::{
     ChapterPage, ChapterPagesResponse, DeleteResponse, ErrorResponse, FindBody, HealthResponse,
-    ListQuery, MigrateLegacyBody, MigrateLegacyResponse, UpsertBody,
+    ListQuery, MarkChaptersBody, MarkChaptersResponse, MigrateLegacyBody, MigrateLegacyResponse,
+    UpsertBody,
 };
 
 #[derive(Clone)]
@@ -59,6 +61,8 @@ struct CbzPageEntry {
         delete_record,
         list_chapter_pages,
         get_chapter_page,
+        get_comic_cover,
+        mark_chapters_read_state,
         migrate_legacy
     ),
     components(
@@ -71,6 +75,8 @@ struct CbzPageEntry {
             ErrorResponse,
             ChapterPage,
             ChapterPagesResponse,
+            MarkChaptersBody,
+            MarkChaptersResponse,
             MigrateLegacyBody,
             MigrateLegacyResponse
         )
@@ -187,6 +193,8 @@ fn build_router(state: RestState) -> Router {
             "/api/chapters/{chapter_id}/pages/{page_index}",
             get(get_chapter_page),
         )
+        .route("/api/comics/{comic_id}/cover", get(get_comic_cover))
+        .route("/api/chapters/mark", post(mark_chapters_read_state))
         .merge(SwaggerUi::new("/swagger").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive());
 
@@ -492,6 +500,117 @@ async fn get_chapter_page(
 }
 
 #[utoipa::path(
+    get,
+    path = "/api/comics/{comic_id}/cover",
+    tag = "db",
+    params(
+        ("comic_id" = String, Path, description = "Comic id")
+    ),
+    responses(
+        (status = 200, description = "Cover image bytes"),
+        (status = 302, description = "Redirect to remote cover URL"),
+        (status = 404, description = "Cover not found", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse)
+    )
+)]
+async fn get_comic_cover(
+    State(state): State<RestState>,
+    Path(comic_id): Path<String>,
+) -> Result<Response, (StatusCode, String)> {
+    let comic = state
+        .service
+        .get("comics", &comic_id)
+        .map_err(internal_error)?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Comic not found".to_string()))?;
+
+    let comic_name = chapter_value_as_string(&comic, "name").unwrap_or_else(|| comic_id.clone());
+    let path = if let Some(cover_ref) = chapter_value_as_string(&comic, "coverUrl")
+        .or_else(|| chapter_value_as_string(&comic, "cover"))
+        .or_else(|| chapter_value_as_string(&comic, "image"))
+    {
+        let trimmed = cover_ref.trim();
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            return Ok(Redirect::temporary(trimmed).into_response());
+        }
+
+        resolve_comic_cover_path(&state.comics_dir, &comic_id, &comic_name, trimmed)
+    } else {
+        find_local_cover_in_comic_dir(&state.comics_dir, &comic_id, &comic_name)
+    }
+    .ok_or_else(|| (StatusCode::NOT_FOUND, "Cover image not found".to_string()))?;
+    let bytes = fs::read(&path).map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read cover image: {error}"),
+        )
+    })?;
+    let content_type = from_path(&path).first_or_octet_stream();
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, content_type.to_string()),
+            (header::CACHE_CONTROL, "public, max-age=300".to_string()),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/chapters/mark",
+    tag = "db",
+    request_body = MarkChaptersBody,
+    responses(
+        (status = 200, description = "Marked chapters as read/unread", body = MarkChaptersResponse),
+        (status = 400, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse)
+    )
+)]
+async fn mark_chapters_read_state(
+    State(state): State<RestState>,
+    Json(payload): Json<MarkChaptersBody>,
+) -> Result<Json<MarkChaptersResponse>, (StatusCode, String)> {
+    if payload.chapter_ids.is_empty() {
+        return Err((StatusCode::BAD_REQUEST, "chapterIds cannot be empty".to_string()));
+    }
+
+    let mut updated = 0usize;
+    let mut skipped = 0usize;
+    let mut seen = HashSet::new();
+
+    for chapter_id in payload.chapter_ids {
+        if !seen.insert(chapter_id.clone()) {
+            continue;
+        }
+
+        let Some(mut chapter) = state.service.get("chapters", &chapter_id).map_err(internal_error)? else {
+            skipped += 1;
+            continue;
+        };
+
+        let Some(data) = chapter.data.as_object_mut() else {
+            skipped += 1;
+            continue;
+        };
+
+        data.insert("isRead".to_string(), Value::Bool(payload.read));
+        data.insert(
+            "progress".to_string(),
+            Value::from(if payload.read { 100 } else { 0 }),
+        );
+
+        state
+            .service
+            .upsert("chapters", Some(chapter.id.clone()), chapter.data)
+            .map_err(internal_error)?;
+        updated += 1;
+    }
+
+    Ok(Json(MarkChaptersResponse { updated, skipped }))
+}
+
+#[utoipa::path(
     post,
     path = "/api/admin/migrate-legacy",
     tag = "db",
@@ -599,6 +718,145 @@ fn resolve_chapter_cbz_path(
             let cbz = dir.join(candidate);
             if cbz.exists() {
                 return Some(cbz);
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_cover_image_path(comics_dir: &FsPath, cover_ref: &str) -> Option<PathBuf> {
+    let normalized = cover_ref.trim().trim_start_matches('/');
+    if normalized.is_empty() || normalized.contains("..") {
+        return None;
+    }
+
+    let direct = comics_dir.join(normalized);
+    if direct.is_file() {
+        return Some(direct);
+    }
+
+    let file_name = FsPath::new(normalized)
+        .file_name()
+        .and_then(|value| value.to_str())?;
+
+    let covers_dir_candidate = comics_dir.join("covers").join(file_name);
+    if covers_dir_candidate.is_file() {
+        return Some(covers_dir_candidate);
+    }
+
+    if let Ok(entries) = fs::read_dir(comics_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let candidate = path.join(file_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_comic_cover_path(
+    comics_dir: &FsPath,
+    comic_id: &str,
+    comic_name: &str,
+    cover_ref: &str,
+) -> Option<PathBuf> {
+    let file_name = FsPath::new(cover_ref)
+        .file_name()
+        .and_then(|value| value.to_str())?;
+    let comic_base = sanitize_segment(comic_name);
+
+    let mut dir_candidates = vec![
+        comics_dir.join(&comic_base),
+        comics_dir.join(sanitize_segment(comic_id)),
+    ];
+
+    if let Ok(entries) = fs::read_dir(comics_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if let Some(name) = path.file_name().and_then(|value| value.to_str()) {
+                if name == comic_base || name.starts_with(&format!("{comic_base} (")) {
+                    dir_candidates.push(path.clone());
+                }
+            }
+        }
+    }
+
+    for dir in dir_candidates {
+        let candidate = dir.join(file_name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+
+    resolve_cover_image_path(comics_dir, cover_ref)
+}
+
+fn find_local_cover_in_comic_dir(
+    comics_dir: &FsPath,
+    comic_id: &str,
+    comic_name: &str,
+) -> Option<PathBuf> {
+    let comic_base = sanitize_segment(comic_name);
+    let mut dir_candidates = vec![
+        comics_dir.join(&comic_base),
+        comics_dir.join(sanitize_segment(comic_id)),
+    ];
+
+    if let Ok(entries) = fs::read_dir(comics_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if let Some(name) = path.file_name().and_then(|value| value.to_str()) {
+                if name == comic_base || name.starts_with(&format!("{comic_base} (")) {
+                    dir_candidates.push(path);
+                }
+            }
+        }
+    }
+
+    for dir in dir_candidates {
+        // Prefer explicit cover filenames first.
+        for file_name in [
+            "cover.jpg",
+            "cover.jpeg",
+            "cover.png",
+            "cover.webp",
+            "cover.avif",
+        ] {
+            let candidate = dir.join(file_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+
+        // Fallback to first image file in the comic directory.
+        if let Ok(entries) = fs::read_dir(&dir) {
+            let mut image_files = entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| path.is_file())
+                .filter(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .map(is_image_file)
+                        .unwrap_or(false)
+                })
+                .collect::<Vec<_>>();
+            image_files.sort();
+            if let Some(first) = image_files.into_iter().next() {
+                return Some(first);
             }
         }
     }

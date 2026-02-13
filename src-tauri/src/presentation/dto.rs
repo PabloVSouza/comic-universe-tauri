@@ -78,3 +78,17 @@ pub struct MigrateLegacyResponse {
     pub imported_rows: usize,
     pub legacy_db_path: Option<String>,
 }
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkChaptersBody {
+    pub chapter_ids: Vec<String>,
+    pub read: bool,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MarkChaptersResponse {
+    pub updated: usize,
+    pub skipped: usize,
+}

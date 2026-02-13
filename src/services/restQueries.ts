@@ -7,11 +7,14 @@ import {
   getChapterPages,
   listChaptersByComicId,
   listComics,
+  markChaptersReadState,
   migrateLegacyDatabase,
   type ChapterData,
   type ComicData,
   type DbRecord,
   type DbTable,
+  type MarkChaptersPayload,
+  type MarkChaptersResponse,
   type MigrateLegacyResponse
 } from './restClient'
 
@@ -97,3 +100,8 @@ export function useMigrateLegacyDatabaseMutation() {
   })
 }
 
+export function useMarkChaptersReadStateMutation() {
+  return useMutation<MarkChaptersResponse, Error, MarkChaptersPayload>({
+    mutationFn: (payload) => markChaptersReadState(payload)
+  })
+}

@@ -7,8 +7,8 @@ import {
   SheetTitle,
   SheetTrigger
 } from 'components/ui/sheet'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useAppStore } from 'stores'
-import { withCurrentWindow } from './WindowActions'
 import { AppMenuRow } from './AppMenuRow'
 import { AppMenuHeader } from './AppMenuHeader'
 import { createMenuItems } from './AppMenuItems'
@@ -29,7 +29,11 @@ export const AppMenuSheet: FC = () => {
       .join('') || 'U'
 
   const handleCloseApp = async () => {
-    await withCurrentWindow(async (window) => window.close())
+    try {
+      await getCurrentWindow().close()
+    } catch (error) {
+      console.error('[AppMenuSheet] Failed to close current window', error)
+    }
   }
 
   const menuItems = createMenuItems(() => void handleCloseApp())

@@ -1,18 +1,20 @@
-import { FC, useCallback, useEffect } from 'react'
+import { FC, useCallback, useEffect, useState } from 'react'
 import { useOpenWindow } from '@pablovsouza/react-window-manager'
 import { useAppStore } from 'stores'
+import { Sheet, SheetContent, SheetTitle } from 'components/ui/sheet'
 import {
   useAccountSessionQuery,
   useClearAccountSessionMutation,
   useSaveAccountSessionMutation,
   useWebsiteVerifyTokenQuery
 } from '../services'
-import { TopBar } from './TopBar'
+import { LeftList, TopBar } from 'components'
 import { LeftNav } from './LeftNav'
 import { MainContent } from './MainContent'
-import { LeftList } from './LeftList'
 
 export const Home: FC = () => {
+  const [isMobileListOpen, setIsMobileListOpen] = useState(false)
+  const [selectedComicId, setSelectedComicId] = useState<string | null>(null)
   const account = useAppStore((state) => state.account)
   const accountHydrated = useAppStore((state) => state.accountHydrated)
   const hydrateAccount = useAppStore((state) => state.hydrateAccount)
@@ -132,11 +134,41 @@ export const Home: FC = () => {
   // }, [wallpaper])
 
   return (
-    <div className="grid size-full grid-cols-[15rem_minmax(0,1fr)] grid-rows-[3.5rem_3.5rem_minmax(0,1fr)] gap-px">
-      <TopBar className="col-span-2 row-start-1" />
-      <LeftNav className="col-start-1 row-start-2" />
-      <LeftList className="col-start-1 row-start-3" />
-      <MainContent className="col-start-2 row-start-2 row-span-2" />
-    </div>
+    <>
+      <div className="grid size-full grid-cols-1 grid-rows-[3.5rem_3.5rem_minmax(0,1fr)] gap-px md:grid-cols-[15rem_minmax(0,1fr)]">
+        <TopBar className="col-start-1 row-start-1 md:col-span-2" />
+        <LeftNav
+          className="col-start-1 row-start-2"
+          onOpenMobileList={() => setIsMobileListOpen(true)}
+        />
+        <LeftList
+          className="hidden md:block md:col-start-1 md:row-start-3"
+          selectedComicId={selectedComicId}
+          onSelectComic={setSelectedComicId}
+        />
+        <MainContent
+          className="col-start-1 row-start-3 md:col-start-2 md:row-start-2 md:row-span-2"
+          selectedComicId={selectedComicId}
+        />
+      </div>
+
+      <Sheet open={isMobileListOpen} onOpenChange={setIsMobileListOpen}>
+        <SheetContent
+          side="left"
+          showCloseButton={false}
+          className="w-[85vw] max-w-[20rem] border-r border-white/10 bg-black/65 p-0 backdrop-blur-xl md:hidden"
+        >
+          <SheetTitle className="sr-only">Comics list</SheetTitle>
+          <LeftList
+            className="h-full"
+            selectedComicId={selectedComicId}
+            onSelectComic={(comicId) => {
+              setSelectedComicId(comicId)
+              setIsMobileListOpen(false)
+            }}
+          />
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }

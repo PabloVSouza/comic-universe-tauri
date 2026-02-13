@@ -3,10 +3,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { BgBox } from 'components'
 import { cn } from 'utils'
 import { logoIcon } from 'assets'
-import { AppMenuSheet, WindowControls } from './topbar/index'
+import { AppMenuSheet } from './index'
 
 export const TopBar: FC<ComponentProps<'div'>> = ({ className, ...props }) => {
-  const isMac = typeof navigator !== 'undefined' && /mac/i.test(navigator.userAgent)
   const handleWindowDrag = (event: MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
 
@@ -30,7 +29,6 @@ export const TopBar: FC<ComponentProps<'div'>> = ({ className, ...props }) => {
         <img src={logoIcon} alt="Comic Universe" className="h-8 w-auto object-contain" />
       </div>
 
-      <WindowControls isMac={isMac} />
       <AppMenuSheet />
     </BgBox>
   )

@@ -8,3 +8,5 @@ export * from "./input";
 export * from "./scroll-area";
 export * from "./separator";
 export * from "./skeleton";
+export * from "./table";
+export * from "./tooltip";
