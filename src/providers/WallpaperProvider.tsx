@@ -43,8 +43,8 @@ export const WallpaperProvider: FC<WallpaperProviderProps> = ({ children }) => {
   }
 
   return (
-    <div className="h-screen w-screen">
-      <div className="size-full absolute -z-10 overflow-hidden">
+    <div className="relative h-dvh w-screen overflow-hidden bg-[#090b14]">
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden bg-[#090b14]">
         <TransitionGroup component={null}>
           <CSSTransition
             key={wallpaper}
@@ -59,7 +59,7 @@ export const WallpaperProvider: FC<WallpaperProviderProps> = ({ children }) => {
           </CSSTransition>
         </TransitionGroup>
       </div>
-      {children}
+      <div className="relative z-10 h-full w-full">{children}</div>
     </div>
   )
 }

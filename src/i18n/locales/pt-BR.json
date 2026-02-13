@@ -1,0 +1,58 @@
+{
+  "auth": {
+    "login": {
+      "title": "Entrar",
+      "subtitle": "Comic Universe",
+      "description": "Entre com sua conta do site Comic Universe para continuar.",
+      "fields": {
+        "email": "Email",
+        "password": "Senha"
+      },
+      "placeholders": {
+        "email": "voce@email.com",
+        "password": "********"
+      },
+      "actions": {
+        "createAccount": "Criar conta",
+        "continue": "Continuar",
+        "signingIn": "Entrando..."
+      },
+      "errors": {
+        "required": "Email e senha são obrigatórios.",
+        "failed": "Não foi possível entrar."
+      }
+    },
+    "register": {
+      "title": "Cadastro",
+      "subtitle": "Comic Universe",
+      "description": "Crie uma nova conta no site Comic Universe.",
+      "fields": {
+        "email": "Email",
+        "username": "Usuário",
+        "displayName": "Nome de exibição",
+        "password": "Senha",
+        "confirmPassword": "Confirmar senha"
+      },
+      "placeholders": {
+        "email": "voce@email.com",
+        "username": "usuario",
+        "displayName": "Seu nome",
+        "password": "********",
+        "confirmPassword": "********"
+      },
+      "actions": {
+        "backToSignIn": "Voltar para entrar",
+        "createAccount": "Criar conta",
+        "creating": "Criando..."
+      },
+      "feedback": {
+        "success": "Conta criada com sucesso."
+      },
+      "errors": {
+        "required": "Todos os campos são obrigatórios.",
+        "passwordMismatch": "As senhas não coincidem.",
+        "failed": "Não foi possível criar a conta."
+      }
+    }
+  }
+}

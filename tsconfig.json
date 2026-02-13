@@ -32,6 +32,8 @@
       "routes/*": ["src/routes/*"],
       "stores": ["src/stores/index"],
       "stores/*": ["src/stores/*"],
+      "services": ["src/services/index"],
+      "services/*": ["src/services/*"],
       "style": ["src/style/index"],
       "style/*": ["src/style/*"],
       "template": ["src/template/index"],

@@ -40,6 +40,8 @@ export default defineConfig(async () => ({
       { find: /^hooks\/(.*)$/, replacement: resolve(__dirname, './src/hooks/$1') },
       { find: /^providers$/, replacement: resolve(__dirname, './src/providers/index') },
       { find: /^providers\/(.*)$/, replacement: resolve(__dirname, './src/providers/$1') },
+      { find: /^services$/, replacement: resolve(__dirname, './src/services/index') },
+      { find: /^services\/(.*)$/, replacement: resolve(__dirname, './src/services/$1') },
       { find: /^routes$/, replacement: resolve(__dirname, './src/routes/index') },
       { find: /^routes\/(.*)$/, replacement: resolve(__dirname, './src/routes/$1') },
       { find: /^stores$/, replacement: resolve(__dirname, './src/stores/index') },

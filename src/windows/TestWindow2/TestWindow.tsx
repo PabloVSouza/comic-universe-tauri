@@ -1,16 +1,13 @@
-import { useMemo, useRef, useState } from 'react'
-import {
-  useKeyboardShortcuts,
-  type WindowDefinition
-} from '@pablovsouza/react-window-manager'
+import { FC, useMemo, useRef, useState } from 'react'
+import { useKeyboardShortcuts } from '@pablovsouza/react-window-manager'
 
-type TestWindowProps = {
+export type TestWindowProps = {
   message?: string
   windowId?: string
   closeSelf?: () => void
 }
 
-export function TestWindow({ message, windowId, closeSelf }: TestWindowProps) {
+export const TestWindow: FC<TestWindowProps> = ({ message, windowId, closeSelf }) => {
   const [rightArrowCount, setRightArrowCount] = useState(0)
   const startedAtRef = useRef(new Date().toLocaleString())
 
@@ -40,7 +37,7 @@ export function TestWindow({ message, windowId, closeSelf }: TestWindowProps) {
 
   return (
     <div className="space-y-3 p-4 text-sm">
-      <h2 className="text-base font-semibold">Window Provider Test</h2>
+      <h2 className="text-base font-semibold">Window Provider Test 2</h2>
       <p>{message || 'This is a test window rendered by the provider-based window manager.'}</p>
       <p className="text-muted-foreground">Opened at: {startedAtRef.current}</p>
       <p className="text-muted-foreground">ArrowRight presses: {rightArrowCount}</p>
@@ -50,19 +47,3 @@ export function TestWindow({ message, windowId, closeSelf }: TestWindowProps) {
     </div>
   )
 }
-
-export const testWindowDefinition: WindowDefinition<TestWindowProps> = {
-  component: TestWindow,
-  windowProps: {
-    contentClassName: 'h-full w-full',
-
-    title: 'Test Window'
-  },
-  initialStatus: {
-    startPosition: 'center',
-    width: 640,
-    height: 420
-  }
-}
-
-export default testWindowDefinition

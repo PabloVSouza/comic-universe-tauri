@@ -6,6 +6,13 @@
   html,
   body {
     color: var(--foreground);
+    overscroll-behavior: none;
+    background-color: #090b14;
+  }
+
+  #root {
+    min-height: 100dvh;
+    background-color: #090b14;
   }
 
   body,

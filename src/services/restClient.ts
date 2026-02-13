@@ -1,5 +1,8 @@
-let runtimeApiBaseUrl =
-  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8787/api";
+const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, '');
+
+let runtimeApiBaseUrl = normalizeBaseUrl(
+  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8787/api",
+);
 
 export type DbTable =
   | "comics"
@@ -134,7 +137,7 @@ export function getChapterPageUrl(chapterId: string, pageIndex: number): string 
 }
 
 export function setApiBaseUrl(value: string): void {
-  runtimeApiBaseUrl = value;
+  runtimeApiBaseUrl = normalizeBaseUrl(value);
 }
 
 export function getApiBaseUrl(): string {
