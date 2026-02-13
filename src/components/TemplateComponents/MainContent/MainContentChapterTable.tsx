@@ -12,14 +12,7 @@ import { ArrowUpDown, BookOpenCheck, CheckSquare2, Square, Undo2 } from 'lucide-
 import { useTranslation } from 'react-i18next'
 import { Button } from 'components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from 'components/ui/tooltip'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from 'components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from 'components/ui/table'
 import { restQueryKeys, useMarkChaptersReadStateMutation } from 'services'
 import type { ChapterData, DbRecord } from 'services'
 import { cn } from 'utils'
@@ -143,7 +136,11 @@ export const MainContentChapterTable = ({ comicId, chapters }: MainContentChapte
                         : t('mainContent.chapterTable.actions.selectAllChapters')
                     }
                   >
-                    {allSelected ? <CheckSquare2 className="size-4" /> : <Square className="size-4" />}
+                    {allSelected ? (
+                      <CheckSquare2 className="size-4" />
+                    ) : (
+                      <Square className="size-4" />
+                    )}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -276,7 +273,11 @@ export const MainContentChapterTable = ({ comicId, chapters }: MainContentChapte
                       : t('mainContent.chapterTable.actions.markRead')
                   }
                 >
-                  {row.original.isRead ? <Undo2 className="size-4" /> : <BookOpenCheck className="size-4" />}
+                  {row.original.isRead ? (
+                    <Undo2 className="size-4" />
+                  ) : (
+                    <BookOpenCheck className="size-4" />
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -306,13 +307,19 @@ export const MainContentChapterTable = ({ comicId, chapters }: MainContentChapte
   const hasSelection = selectedIds.size > 0
 
   return (
-    <div className="min-h-0 overflow-auto rounded-lg bg-background/70 p-2">
+    <div className="min-h-0 overflow-auto">
       {hasSelection ? (
-        <div className="animate-in fade-in-0 slide-in-from-top-1 mb-2 flex items-center gap-2 rounded-md bg-muted/40 p-2 duration-200">
+        <div className="animate-in fade-in-0 slide-in-from-top-1 mt-px mb-px flex items-center gap-2 bg-background/70 p-2 duration-200">
           <div className="text-xs text-muted-foreground">
             {t('mainContent.chapterTable.bulk.selectedCount', { count: selectedIds.size })}
           </div>
-          <Button type="button" size="sm" variant="ghost" className="h-8 px-2" onClick={() => setSelectedIds(new Set())}>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 px-2"
+            onClick={() => setSelectedIds(new Set())}
+          >
             {t('mainContent.chapterTable.bulk.clear')}
           </Button>
           <Button
@@ -341,7 +348,10 @@ export const MainContentChapterTable = ({ comicId, chapters }: MainContentChapte
       <Table className="table-fixed">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
-            <TableRow key={headerGroup.id} className="border-border/50 bg-muted/30 hover:bg-muted/30">
+            <TableRow
+              key={headerGroup.id}
+              className="border-border/50 bg-muted/30 hover:bg-muted/30"
+            >
               {headerGroup.headers.map((header) => (
                 <TableHead
                   key={header.id}
@@ -376,7 +386,10 @@ export const MainContentChapterTable = ({ comicId, chapters }: MainContentChapte
             })
           ) : (
             <TableRow>
-              <TableCell colSpan={columns.length} className="h-20 text-center text-muted-foreground">
+              <TableCell
+                colSpan={columns.length}
+                className="h-20 text-center text-muted-foreground"
+              >
                 {t('mainContent.chapterTable.empty')}
               </TableCell>
             </TableRow>
