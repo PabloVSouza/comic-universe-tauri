@@ -25,6 +25,7 @@ pub enum Table {
     ReadProgress,
     Plugins,
     Changelog,
+    AppState,
 }
 
 impl Table {
@@ -35,6 +36,7 @@ impl Table {
             "read_progress" => Ok(Self::ReadProgress),
             "plugins" => Ok(Self::Plugins),
             "changelog" => Ok(Self::Changelog),
+            "app_state" => Ok(Self::AppState),
             _ => Err(AppError::InvalidTable(input.to_string())),
         }
     }
@@ -46,6 +48,7 @@ impl Table {
             Self::ReadProgress => "read_progress",
             Self::Plugins => "plugins",
             Self::Changelog => "changelog",
+            Self::AppState => "app_state",
         }
     }
 }

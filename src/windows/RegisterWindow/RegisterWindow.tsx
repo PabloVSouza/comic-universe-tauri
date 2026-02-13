@@ -5,6 +5,7 @@ import { Button } from 'components/ui/button'
 import { Input } from 'components/ui/input'
 import { logoIcon } from 'assets'
 import { useWebsiteRegisterMutation } from '../../services'
+import { mapAuthErrorMessage } from '../../i18n/authErrorMessages'
 
 export type RegisterWindowProps = {
   closeSelf?: () => void
@@ -39,22 +40,20 @@ export const RegisterWindow: FC<RegisterWindowProps> = ({ closeSelf }) => {
     setSuccessMessage(null)
 
     try {
-      const response = await registerMutation.mutateAsync({
+      await registerMutation.mutateAsync({
         email: email.trim(),
         username: username.trim(),
         displayName: displayName.trim(),
         password
       })
 
-      setSuccessMessage(response.message || t('auth.register.feedback.success'))
+      setSuccessMessage(t('auth.register.feedback.success'))
       setTimeout(() => {
         openWindow({ component: 'LoginWindow' })
         closeSelf?.()
       }, 400)
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : t('auth.register.errors.failed')
-      setError(message)
+      setError(mapAuthErrorMessage(caughtError, t, 'auth.register.errors.failed'))
     }
   }
 

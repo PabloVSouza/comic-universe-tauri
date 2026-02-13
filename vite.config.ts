@@ -33,6 +33,7 @@ export default defineConfig(async () => ({
   },
   resolve: {
     alias: [
+      { find: /^@\/lib\/utils$/, replacement: resolve(__dirname, './src/utils/index') },
       { find: '@', replacement: resolve(__dirname, './src') },
       { find: /^components$/, replacement: resolve(__dirname, './src/components/index') },
       { find: /^components\/(.*)$/, replacement: resolve(__dirname, './src/components/$1') },

@@ -1,5 +1,27 @@
 {
+  "topbar": {
+    "menu": {
+      "title": "Menu",
+      "openMenu": "Abrir menu",
+      "aboutApp": "Sobre este App",
+      "settings": "Configurações",
+      "userSettings": "Configurações do Usuário",
+      "plugins": "Plugins",
+      "closeApp": "Fechar App",
+      "user": {
+        "guest": "Convidado",
+        "notSignedIn": "Não autenticado"
+      }
+    }
+  },
   "auth": {
+    "common": {
+      "errors": {
+        "network": "Não foi possível conectar. Verifique sua internet e tente novamente.",
+        "validation": "Dados inválidos. Revise os campos e tente novamente.",
+        "server": "Erro interno do servidor. Tente novamente em instantes."
+      }
+    },
     "login": {
       "title": "Entrar",
       "subtitle": "Comic Universe",
@@ -19,6 +41,7 @@
       },
       "errors": {
         "required": "Email e senha são obrigatórios.",
+        "invalidCredentials": "Email ou senha inválidos.",
         "failed": "Não foi possível entrar."
       }
     },
@@ -51,6 +74,8 @@
       "errors": {
         "required": "Todos os campos são obrigatórios.",
         "passwordMismatch": "As senhas não coincidem.",
+        "emailTaken": "Este email já está em uso.",
+        "usernameTaken": "Este nome de usuário já está em uso.",
         "failed": "Não foi possível criar a conta."
       }
     }

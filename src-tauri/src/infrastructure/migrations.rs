@@ -37,6 +37,11 @@ impl SqliteMigrationRunner {
                     name: "remove_user_id_from_json_documents",
                     sql: REMOVE_USER_ID_FROM_JSON_DOCUMENTS_SQL,
                 },
+                Migration {
+                    version: 5,
+                    name: "add_app_state_table",
+                    sql: ADD_APP_STATE_TABLE_SQL,
+                },
             ],
         }
     }
@@ -344,6 +349,13 @@ CREATE TABLE IF NOT EXISTS changelog (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+CREATE TABLE IF NOT EXISTS app_state (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_comics_site_id ON comics (json_extract(data, '$.siteId'));
 CREATE INDEX IF NOT EXISTS idx_chapters_comic_id ON chapters (json_extract(data, '$.comicId'));
 CREATE INDEX IF NOT EXISTS idx_changelog_synced ON changelog (json_extract(data, '$.synced'));
@@ -377,6 +389,15 @@ WHERE json_type(data, '$.userId') IS NOT NULL;
 UPDATE changelog
 SET data = json_remove(json_remove(data, '$.userId'), '$.data.userId')
 WHERE json_type(data, '$.userId') IS NOT NULL OR json_type(data, '$.data.userId') IS NOT NULL;
+"#;
+
+const ADD_APP_STATE_TABLE_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS app_state (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 "#;
 
 #[cfg(test)]

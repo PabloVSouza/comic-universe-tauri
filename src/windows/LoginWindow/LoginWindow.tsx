@@ -1,11 +1,12 @@
-import { FC, FormEvent, useState } from 'react'
+import { FC, FormEvent, useEffect, useState } from 'react'
 import { useOpenWindow } from '@pablovsouza/react-window-manager'
 import { useTranslation } from 'react-i18next'
 import { Button } from 'components/ui/button'
 import { Input } from 'components/ui/input'
 import { logoIcon } from 'assets'
 import { useAppStore } from 'stores'
-import { useWebsiteLoginMutation } from '../../services'
+import { useSaveAccountSessionMutation, useWebsiteLoginMutation } from '../../services'
+import { mapAuthErrorMessage } from '../../i18n/authErrorMessages'
 
 export type LoginWindowProps = {
   closeSelf?: () => void
@@ -16,18 +17,37 @@ export const LoginWindow: FC<LoginWindowProps> = ({ closeSelf }) => {
   const setAccount = useAppStore((state) => state.setAccount)
   const openWindow = useOpenWindow()
   const loginMutation = useWebsiteLoginMutation()
+  const saveAccountSession = useSaveAccountSessionMutation()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [deviceName, setDeviceName] = useState('unknown-device')
   const [error, setError] = useState<string | null>(null)
 
-  const getDeviceNameFromHost = (): string => {
-    if (typeof window === 'undefined') {
-      return 'unknown-host'
+  useEffect(() => {
+    let cancelled = false
+
+    const loadDeviceName = async () => {
+      try {
+        const { invoke } = await import('@tauri-apps/api/core')
+        const name = await invoke<string>('get_machine_hostname')
+        if (!cancelled && name.trim()) {
+          setDeviceName(name.trim())
+        }
+      } catch {
+        // Browser-only fallback for non-tauri contexts.
+        const fallback = window.location.hostname?.trim() || 'unknown-device'
+        if (!cancelled) {
+          setDeviceName(fallback)
+        }
+      }
     }
 
-    const host = window.location.hostname?.trim()
-    return host || 'unknown-host'
-  }
+    void loadDeviceName()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -40,14 +60,13 @@ export const LoginWindow: FC<LoginWindowProps> = ({ closeSelf }) => {
     setError(null)
 
     try {
-      const deviceName = getDeviceNameFromHost()
       const response = await loginMutation.mutateAsync({
         email: email.trim(),
         password,
         deviceName
       })
 
-      setAccount({
+      const nextAccount = {
         token: response.token,
         expiresAt: response.expiresAt,
         deviceName: response.deviceName,
@@ -55,23 +74,24 @@ export const LoginWindow: FC<LoginWindowProps> = ({ closeSelf }) => {
         websiteUserId: response.websiteUserId,
         username: null,
         displayName: null
-      })
+      }
+
+      await saveAccountSession.mutateAsync(nextAccount)
+      setAccount(nextAccount)
 
       closeSelf?.()
     } catch (caughtError) {
-      const message =
-        caughtError instanceof Error ? caughtError.message : t('auth.login.errors.failed')
-      setError(message)
+      setError(mapAuthErrorMessage(caughtError, t, 'auth.login.errors.failed'))
     }
   }
 
   return (
     <form
-      className="flex flex-col gap-3 bg-card/90 align-middle items-center justify-between height-full"
+      className="flex flex-col gap-3 bg-card/90 align-middle items-center justify-between height-full p-5"
       onSubmit={handleSubmit}
     >
       <div className="flex flex-col items-center gap-1 text-center">
-        <img src={logoIcon} alt="Comic Universe" className="w-64 mb-7" />
+        <img src={logoIcon} alt="Comic Universe" className="w-3/4 mb-7" />
         <h2 className="font-bangers text-4xl leading-none tracking-wide text-yellow-400">
           {t('auth.login.title')}
         </h2>
@@ -79,9 +99,7 @@ export const LoginWindow: FC<LoginWindowProps> = ({ closeSelf }) => {
       </div>
 
       <div className="space-y-0.5">
-        <p className="text-sm text-muted-foreground">
-          {t('auth.login.description')}
-        </p>
+        <p className="text-sm text-muted-foreground">{t('auth.login.description')}</p>
       </div>
 
       <div className="space-y-2 w-full">
@@ -137,7 +155,9 @@ export const LoginWindow: FC<LoginWindowProps> = ({ closeSelf }) => {
           disabled={loginMutation.isPending}
           className="bg-yellow-400 text-gray-900 hover:bg-yellow-500"
         >
-          {loginMutation.isPending ? t('auth.login.actions.signingIn') : t('auth.login.actions.continue')}
+          {loginMutation.isPending
+            ? t('auth.login.actions.signingIn')
+            : t('auth.login.actions.continue')}
         </Button>
       </div>
     </form>

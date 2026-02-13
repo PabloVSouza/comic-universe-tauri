@@ -9,7 +9,8 @@ export type DbTable =
   | "chapters"
   | "read_progress"
   | "plugins"
-  | "changelog";
+  | "changelog"
+  | "app_state";
 
 export interface DbRecord<T = Record<string, unknown>> {
   id: string;
@@ -96,6 +97,29 @@ export async function dbFind<T extends Record<string, unknown>>(
   return requestJson<Array<DbRecord<T>>>(`${runtimeApiBaseUrl}/db/${table}/find`, {
     method: "POST",
     body: JSON.stringify({ jsonPath, value, limit }),
+  });
+}
+
+export async function dbGet<T extends Record<string, unknown>>(
+  table: DbTable,
+  id: string,
+): Promise<DbRecord<T> | null> {
+  try {
+    return await requestJson<DbRecord<T>>(`${runtimeApiBaseUrl}/db/${table}/${id}`);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("(404)")) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function dbDelete(
+  table: DbTable,
+  id: string,
+): Promise<{ deleted: boolean }> {
+  return requestJson<{ deleted: boolean }>(`${runtimeApiBaseUrl}/db/${table}/${id}`, {
+    method: "DELETE",
   });
 }
 

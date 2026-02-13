@@ -1,7 +1,12 @@
 import { FC, useCallback, useEffect } from 'react'
 import { useOpenWindow } from '@pablovsouza/react-window-manager'
 import { useAppStore } from 'stores'
-import { useWebsiteVerifyTokenQuery } from '../services'
+import {
+  useAccountSessionQuery,
+  useClearAccountSessionMutation,
+  useSaveAccountSessionMutation,
+  useWebsiteVerifyTokenQuery
+} from '../services'
 import { TopBar } from './TopBar'
 import { LeftNav } from './LeftNav'
 import { MainContent } from './MainContent'
@@ -9,9 +14,14 @@ import { LeftList } from './LeftList'
 
 export const Home: FC = () => {
   const account = useAppStore((state) => state.account)
+  const accountHydrated = useAppStore((state) => state.accountHydrated)
+  const hydrateAccount = useAppStore((state) => state.hydrateAccount)
   const setAccount = useAppStore((state) => state.setAccount)
   const logout = useAppStore((state) => state.logout)
   const openWindow = useOpenWindow()
+  const accountSessionQuery = useAccountSessionQuery()
+  const { mutate: saveAccountSession } = useSaveAccountSessionMutation()
+  const { mutate: clearAccountSession } = useClearAccountSessionMutation()
   const verifyTokenQuery = useWebsiteVerifyTokenQuery(account?.token)
 
   const openLoginWindow = useCallback(() => {
@@ -21,8 +31,23 @@ export const Home: FC = () => {
   }, [openWindow])
 
   useEffect(() => {
+    if (!accountHydrated && accountSessionQuery.isFetched) {
+      hydrateAccount(accountSessionQuery.data ?? null)
+    }
+  }, [accountHydrated, accountSessionQuery.data, accountSessionQuery.isFetched, hydrateAccount])
+
+  useEffect(() => {
     let cancelled = false
     let openFrame = 0
+
+    if (!accountHydrated) {
+      return () => {
+        cancelled = true
+        if (openFrame) {
+          window.cancelAnimationFrame(openFrame)
+        }
+      }
+    }
 
     if (!account) {
       openFrame = window.requestAnimationFrame(() => {
@@ -33,6 +58,7 @@ export const Home: FC = () => {
     }
     if (account && verifyTokenQuery.isError) {
       logout()
+      clearAccountSession()
       openFrame = window.requestAnimationFrame(() => {
         if (!cancelled) {
           openLoginWindow()
@@ -60,6 +86,7 @@ export const Home: FC = () => {
 
       if (!unchanged) {
         setAccount(nextAccount)
+        saveAccountSession(nextAccount)
       }
     }
 
@@ -69,7 +96,18 @@ export const Home: FC = () => {
         window.cancelAnimationFrame(openFrame)
       }
     }
-  }, [account, verifyTokenQuery.data, verifyTokenQuery.isError, openLoginWindow, setAccount, logout])
+  }, [
+    account,
+    accountHydrated,
+    verifyTokenQuery.data,
+    verifyTokenQuery.isError,
+    openLoginWindow,
+    setAccount,
+    logout,
+    clearAccountSession,
+    saveAccountSession,
+    hydrateAccount
+  ])
 
   // const { wallpaper, setWallpaper } = useAppStore()
 
