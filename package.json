@@ -7,9 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "legacy:export-cbz": "node scripts/export-legacy-cbz.mjs",
-    "db:sync-has-offline": "node scripts/sync-chapter-has-offline.mjs"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@fontsource/bangers": "^5.2.8",
@@ -20,6 +18,7 @@
     "@tanstack/react-query": "^5.90.20",
     "@tanstack/react-table": "^8.21.3",
     "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-deep-link": "^2.4.7",
     "@tauri-apps/plugin-opener": "^2.5.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

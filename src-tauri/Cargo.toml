@@ -33,3 +33,7 @@ sea-query = "1.0.0-rc.10"
 sea-query-rusqlite = { version = "0.8.0-rc.15", features = ["with-json"] }
 zip = "7.4.0"
 mime_guess = "2.0.5"
+tauri-plugin-deep-link = "2"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"

@@ -14,6 +14,8 @@ use app_paths::resolve_app_paths;
 use serde_json::Value;
 use tauri::menu::Menu;
 use tauri::{Emitter, Manager, RunEvent};
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::{
     application::{AdminService, DocumentService},
@@ -54,6 +56,13 @@ fn boxed_error(message: String) -> Box<dyn Error> {
 }
 
 fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        if let Err(error) = app.deep_link().register_all() {
+            eprintln!("Failed to register deep-link schemes at runtime: {error}");
+        }
+    }
+
     #[cfg(target_os = "macos")]
     if let Some(main_window) = app.get_webview_window("main") {
         let default_menu = Menu::default(app.handle())
@@ -346,8 +355,32 @@ fn handle_run_event(app_handle: &tauri::AppHandle, event: RunEvent) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .enable_macos_default_menu(true)
+        .plugin(tauri_plugin_deep_link::init());
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        if let Some(main_window) = app.get_webview_window("main") {
+            let _ = main_window.show();
+            let _ = main_window.unminimize();
+            let _ = main_window.set_focus();
+        }
+
+        let deep_links = argv
+            .iter()
+            .filter(|arg| {
+                arg.starts_with("comic-universe://") || arg.starts_with("comic-universe-tauri://")
+            })
+            .cloned()
+            .collect::<Vec<String>>();
+
+        if !deep_links.is_empty() {
+            let _ = app.emit("deep-link://urls", deep_links);
+        }
+    }));
+
+    let app = builder
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_machine_hostname,

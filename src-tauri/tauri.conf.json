@@ -39,5 +39,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        { "host": "comicuniverse.app", "pathPrefix": ["/open", "/plugin"] },
+        { "host": "www.comicuniverse.app", "pathPrefix": ["/open", "/plugin"] }
+      ],
+      "desktop": {
+        "schemes": ["comic-universe", "comic-universe-tauri"]
+      }
+    }
   }
 }

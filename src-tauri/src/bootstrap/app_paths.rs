@@ -1,4 +1,6 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+#[cfg(not(debug_assertions))]
+use tauri::Manager;
 
 pub struct AppPaths {
     pub profile: String,
@@ -18,7 +20,7 @@ pub fn resolve_app_paths(_app: &tauri::App) -> Result<AppPaths, String> {
         .unwrap_or_else(|_| {
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .parent()
-                .unwrap_or_else(|| Path::new("."))
+                .unwrap_or_else(|| std::path::Path::new("."))
                 .join("dev-data")
         });
 
