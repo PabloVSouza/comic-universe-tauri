@@ -5,8 +5,16 @@ interface MainContentProps extends ComponentProps<'div'> {
   selectedComicId?: string | null
 }
 
-export const MainContent: FC<MainContentProps> = ({ className, selectedComicId, ...props }) => {
+export const MainContent: FC<MainContentProps> = ({
+  className,
+  selectedComicId,
+  ...props
+}) => {
   return (
-    <MainContentView className={className} selectedComicId={selectedComicId} {...props} />
+    <MainContentView
+      className={className}
+      selectedComicId={selectedComicId}
+      {...props}
+    />
   )
 }

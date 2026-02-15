@@ -42,6 +42,16 @@ impl SqliteMigrationRunner {
                     name: "add_app_state_table",
                     sql: ADD_APP_STATE_TABLE_SQL,
                 },
+                Migration {
+                    version: 6,
+                    name: "dedupe_read_progress_by_chapter_and_add_unique_index",
+                    sql: DEDUPE_READ_PROGRESS_AND_ADD_UNIQUE_CHAPTER_INDEX_SQL,
+                },
+                Migration {
+                    version: 7,
+                    name: "add_relational_columns_and_indexes",
+                    sql: ADD_RELATIONAL_COLUMNS_AND_INDEXES_SQL,
+                },
             ],
         }
     }
@@ -334,6 +344,9 @@ CREATE TABLE IF NOT EXISTS read_progress (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_read_progress_chapter_id_unique
+ON read_progress (json_extract(data, '$.chapterId'))
+WHERE json_type(data, '$.chapterId') = 'text';
 
 CREATE TABLE IF NOT EXISTS plugins (
   id TEXT PRIMARY KEY NOT NULL,
@@ -398,6 +411,91 @@ CREATE TABLE IF NOT EXISTS app_state (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+"#;
+
+const DEDUPE_READ_PROGRESS_AND_ADD_UNIQUE_CHAPTER_INDEX_SQL: &str = r#"
+DELETE FROM read_progress
+WHERE json_type(data, '$.chapterId') = 'text'
+  AND id NOT IN (
+    SELECT id
+    FROM (
+      SELECT
+        id,
+        ROW_NUMBER() OVER (
+          PARTITION BY json_extract(data, '$.chapterId')
+          ORDER BY updated_at DESC, created_at DESC, id DESC
+        ) AS rn
+      FROM read_progress
+      WHERE json_type(data, '$.chapterId') = 'text'
+    )
+    WHERE rn = 1
+  );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_read_progress_chapter_id_unique
+ON read_progress (json_extract(data, '$.chapterId'))
+WHERE json_type(data, '$.chapterId') = 'text';
+"#;
+
+const ADD_RELATIONAL_COLUMNS_AND_INDEXES_SQL: &str = r#"
+ALTER TABLE chapters ADD COLUMN comic_id TEXT;
+ALTER TABLE read_progress ADD COLUMN chapter_id TEXT;
+ALTER TABLE read_progress ADD COLUMN comic_id TEXT;
+
+UPDATE chapters
+SET comic_id = json_extract(data, '$.comicId')
+WHERE comic_id IS NULL;
+
+UPDATE read_progress
+SET
+  chapter_id = json_extract(data, '$.chapterId'),
+  comic_id = json_extract(data, '$.comicId')
+WHERE chapter_id IS NULL OR comic_id IS NULL;
+
+DROP INDEX IF EXISTS idx_chapters_comic_id;
+CREATE INDEX IF NOT EXISTS idx_chapters_comic_id ON chapters (comic_id);
+CREATE INDEX IF NOT EXISTS idx_read_progress_comic_id ON read_progress (comic_id);
+DROP INDEX IF EXISTS idx_read_progress_chapter_id_unique;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_read_progress_chapter_id_unique ON read_progress (chapter_id);
+
+CREATE TRIGGER IF NOT EXISTS trg_chapters_sync_relational_after_insert
+AFTER INSERT ON chapters
+FOR EACH ROW
+BEGIN
+  UPDATE chapters
+  SET comic_id = json_extract(NEW.data, '$.comicId')
+  WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_chapters_sync_relational_after_update
+AFTER UPDATE OF data ON chapters
+FOR EACH ROW
+BEGIN
+  UPDATE chapters
+  SET comic_id = json_extract(NEW.data, '$.comicId')
+  WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_read_progress_sync_relational_after_insert
+AFTER INSERT ON read_progress
+FOR EACH ROW
+BEGIN
+  UPDATE read_progress
+  SET
+    chapter_id = json_extract(NEW.data, '$.chapterId'),
+    comic_id = json_extract(NEW.data, '$.comicId')
+  WHERE id = NEW.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_read_progress_sync_relational_after_update
+AFTER UPDATE OF data ON read_progress
+FOR EACH ROW
+BEGIN
+  UPDATE read_progress
+  SET
+    chapter_id = json_extract(NEW.data, '$.chapterId'),
+    comic_id = json_extract(NEW.data, '$.comicId')
+  WHERE id = NEW.id;
+END;
 "#;
 
 #[cfg(test)]

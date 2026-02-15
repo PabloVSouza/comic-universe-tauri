@@ -1,11 +1,11 @@
-import { FC, useCallback, useEffect, useState } from 'react'
+import { FC, useCallback, useEffect, useRef, useState } from 'react'
 import { useOpenWindow } from '@pablovsouza/react-window-manager'
 import { useAppStore } from 'stores'
-import { Sheet, SheetContent, SheetTitle } from 'components/ui/sheet'
 import {
   useAccountSessionQuery,
   useClearAccountSessionMutation,
   useSaveAccountSessionMutation,
+  useWebsiteGenerateAppTokenMutation,
   useWebsiteVerifyTokenQuery
 } from '../services'
 import { LeftList, TopBar } from 'components'
@@ -13,18 +13,24 @@ import { LeftNav } from './LeftNav'
 import { MainContent } from './MainContent'
 
 export const Home: FC = () => {
-  const [isMobileListOpen, setIsMobileListOpen] = useState(false)
   const [selectedComicId, setSelectedComicId] = useState<string | null>(null)
+  const [isMobileListVisible, setMobileListVisible] = useState(false)
   const account = useAppStore((state) => state.account)
   const accountHydrated = useAppStore((state) => state.accountHydrated)
   const hydrateAccount = useAppStore((state) => state.hydrateAccount)
   const setAccount = useAppStore((state) => state.setAccount)
   const logout = useAppStore((state) => state.logout)
+  const isMobileListOpen = useAppStore((state) => state.isMobileListOpen)
+  const setMobileListOpen = useAppStore((state) => state.setMobileListOpen)
   const openWindow = useOpenWindow()
   const accountSessionQuery = useAccountSessionQuery()
   const { mutate: saveAccountSession } = useSaveAccountSessionMutation()
   const { mutate: clearAccountSession } = useClearAccountSessionMutation()
+  const renewTokenMutation = useWebsiteGenerateAppTokenMutation()
   const verifyTokenQuery = useWebsiteVerifyTokenQuery(account?.token)
+  const renewingTokenRef = useRef(false)
+  const renewedFromTokenRef = useRef<string | null>(null)
+  const mobileListAnimationMs = 200
 
   const openLoginWindow = useCallback(() => {
     openWindow({
@@ -58,14 +64,47 @@ export const Home: FC = () => {
         }
       })
     }
-    if (account && verifyTokenQuery.isError) {
-      logout()
-      clearAccountSession()
-      openFrame = window.requestAnimationFrame(() => {
-        if (!cancelled) {
-          openLoginWindow()
+    if (
+      account &&
+      verifyTokenQuery.isError &&
+      !renewingTokenRef.current &&
+      renewedFromTokenRef.current !== account.token
+    ) {
+      renewingTokenRef.current = true
+      renewedFromTokenRef.current = account.token
+
+      void (async () => {
+        try {
+          const renewal = await renewTokenMutation.mutateAsync({
+            userId: account.websiteUserId,
+            deviceName: account.deviceName
+          })
+
+          if (cancelled) return
+
+          const renewedAccount = {
+            ...account,
+            token: renewal.token,
+            expiresAt: renewal.expiresAt,
+            deviceName: renewal.deviceName
+          }
+
+          setAccount(renewedAccount)
+          saveAccountSession(renewedAccount)
+        } catch {
+          if (cancelled) return
+
+          logout()
+          clearAccountSession()
+          openFrame = window.requestAnimationFrame(() => {
+            if (!cancelled) {
+              openLoginWindow()
+            }
+          })
+        } finally {
+          renewingTokenRef.current = false
         }
-      })
+      })()
     }
     if (account && verifyTokenQuery.data) {
       const verified = verifyTokenQuery.data
@@ -103,6 +142,7 @@ export const Home: FC = () => {
     accountHydrated,
     verifyTokenQuery.data,
     verifyTokenQuery.isError,
+    renewTokenMutation,
     openLoginWindow,
     setAccount,
     logout,
@@ -133,13 +173,30 @@ export const Home: FC = () => {
   //   }, 10000)
   // }, [wallpaper])
 
+  useEffect(() => {
+    let timeoutId: number | undefined
+
+    if (isMobileListOpen) {
+      setMobileListVisible(true)
+    } else {
+      timeoutId = window.setTimeout(() => {
+        setMobileListVisible(false)
+      }, mobileListAnimationMs)
+    }
+
+    return () => {
+      if (timeoutId) {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [isMobileListOpen, mobileListAnimationMs])
+
   return (
     <>
-      <div className="grid size-full grid-cols-1 grid-rows-[3.5rem_3.5rem_minmax(0,1fr)] gap-px md:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className="grid size-full grid-cols-1 grid-rows-[3.5rem_minmax(0,1fr)] gap-px md:grid-cols-[15rem_minmax(0,1fr)] md:grid-rows-[3.5rem_3.5rem_minmax(0,1fr)]">
         <TopBar className="col-start-1 row-start-1 md:col-span-2" />
         <LeftNav
-          className="col-start-1 row-start-2"
-          onOpenMobileList={() => setIsMobileListOpen(true)}
+          className="hidden md:flex md:col-start-1 md:row-start-2"
         />
         <LeftList
           className="hidden md:block md:col-start-1 md:row-start-3"
@@ -147,28 +204,43 @@ export const Home: FC = () => {
           onSelectComic={setSelectedComicId}
         />
         <MainContent
-          className="col-start-1 row-start-3 md:col-start-2 md:row-start-2 md:row-span-2"
+          className="col-start-1 row-start-2 md:col-start-2 md:row-start-2 md:row-span-2"
           selectedComicId={selectedComicId}
         />
       </div>
 
-      <Sheet open={isMobileListOpen} onOpenChange={setIsMobileListOpen}>
-        <SheetContent
-          side="left"
-          showCloseButton={false}
-          className="w-[85vw] max-w-[20rem] border-r border-white/10 bg-black/65 p-0 backdrop-blur-xl md:hidden"
+      <div
+        className={`fixed inset-0 z-50 transition-[visibility] duration-0 md:hidden ${
+          isMobileListOpen || isMobileListVisible ? 'visible pointer-events-auto' : 'invisible pointer-events-none'
+        }`}
+      >
+        <button
+          type="button"
+          aria-label="Close comic list"
+          className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${
+            isMobileListOpen ? 'opacity-100' : 'opacity-0'
+          }`}
+          onClick={() => setMobileListOpen(false)}
+        />
+
+        <aside
+          className={`relative h-full w-[85vw] max-w-[20rem] border-r border-border/50 bg-background transition-transform duration-200 ease-out will-change-transform ${
+            isMobileListOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
         >
-          <SheetTitle className="sr-only">Comics list</SheetTitle>
-          <LeftList
-            className="h-full"
-            selectedComicId={selectedComicId}
-            onSelectComic={(comicId) => {
-              setSelectedComicId(comicId)
-              setIsMobileListOpen(false)
-            }}
-          />
-        </SheetContent>
-      </Sheet>
+          <div className="grid h-full grid-rows-[3.5rem_minmax(0,1fr)] gap-px">
+            <LeftNav className="row-start-1" />
+            <LeftList
+              className="row-start-2 min-h-0"
+              selectedComicId={selectedComicId}
+              onSelectComic={(comicId) => {
+                setSelectedComicId(comicId)
+                setMobileListOpen(false)
+              }}
+            />
+          </div>
+        </aside>
+      </div>
     </>
   )
 }

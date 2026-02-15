@@ -1,9 +1,11 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   websiteAppLogin,
+  websiteGenerateAppToken,
   websiteRegister,
   websiteVerifyAppToken,
   type WebsiteAppLoginRequest,
+  type WebsiteGenerateAppTokenRequest,
   type WebsiteRegisterRequest
 } from './websiteAuthClient'
 
@@ -33,3 +35,8 @@ export function useWebsiteRegisterMutation() {
   })
 }
 
+export function useWebsiteGenerateAppTokenMutation() {
+  return useMutation({
+    mutationFn: (payload: WebsiteGenerateAppTokenRequest) => websiteGenerateAppToken(payload)
+  })
+}

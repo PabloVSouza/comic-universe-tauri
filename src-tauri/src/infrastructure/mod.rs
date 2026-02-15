@@ -1,6 +1,6 @@
 mod migrations;
 
-use std::{fs, path::Path, path::PathBuf};
+use std::{collections::HashSet, fs, path::Path, path::PathBuf};
 
 use rusqlite::{params, Connection, OptionalExtension};
 use sea_query::{Alias, Expr, ExprTrait, Order, Query, SqliteQueryBuilder, Value as SeaValue};
@@ -47,23 +47,78 @@ impl DocumentStore for SqliteDocumentStore {
         }
 
         let conn = open_connection(&self.db_path)?;
-        let id = id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let id = match (table, id) {
+            // read_progress: keep one row per chapter regardless of legacy ids.
+            (Table::ReadProgress, _) => {
+                let chapter_id = data
+                    .get("chapterId")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .ok_or_else(|| {
+                        AppError::Validation(
+                            "read_progress upsert requires a valid data.chapterId".to_string(),
+                        )
+                    })?;
+
+                let existing_id: Option<String> = conn
+                    .query_row(
+                        "SELECT id FROM read_progress
+                         WHERE json_extract(data, '$.chapterId') = ?1
+                         ORDER BY updated_at DESC
+                         LIMIT 1",
+                        params![chapter_id],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(|e| AppError::infrastructure(e.to_string()))?;
+
+                existing_id.unwrap_or(chapter_id)
+            }
+            (_, Some(existing_id)) => existing_id,
+            (_, None) => Uuid::new_v4().to_string(),
+        };
         let table_name = table.as_str();
-        let sql = format!(
-            "
-            INSERT INTO {table_name} (id, data)
-            VALUES (?1, json(?2))
-            ON CONFLICT(id) DO UPDATE SET
-              data = json(?2),
-              updated_at = ({timestamp});
-        ",
-            timestamp = TIMESTAMP_SQL
-        );
 
         let payload =
             serde_json::to_string(&data).map_err(|e| AppError::infrastructure(e.to_string()))?;
-        conn.execute(&sql, params![id, payload])
-            .map_err(|e| AppError::infrastructure(e.to_string()))?;
+
+        if matches!(table, Table::ReadProgress) {
+            let sql = format!(
+                "
+                INSERT INTO {table_name} (id, data, chapter_id, comic_id)
+                VALUES (
+                  ?1,
+                  json(?2),
+                  json_extract(json(?2), '$.chapterId'),
+                  json_extract(json(?2), '$.comicId')
+                )
+                ON CONFLICT(id) DO UPDATE SET
+                  data = json(?2),
+                  chapter_id = json_extract(json(?2), '$.chapterId'),
+                  comic_id = json_extract(json(?2), '$.comicId'),
+                  updated_at = ({timestamp});
+                ",
+                timestamp = TIMESTAMP_SQL
+            );
+
+            conn.execute(&sql, params![id, payload.clone()])
+                .map_err(|e| AppError::infrastructure(e.to_string()))?;
+        } else {
+            let sql = format!(
+                "
+                INSERT INTO {table_name} (id, data)
+                VALUES (?1, json(?2))
+                ON CONFLICT(id) DO UPDATE SET
+                  data = json(?2),
+                  updated_at = ({timestamp});
+                ",
+                timestamp = TIMESTAMP_SQL
+            );
+            conn.execute(&sql, params![id, payload])
+                .map_err(|e| AppError::infrastructure(e.to_string()))?;
+        }
 
         self.get(table, &id)?.ok_or_else(|| {
             AppError::Infrastructure("Failed to fetch record after upsert".to_string())
@@ -139,13 +194,12 @@ impl DocumentStore for SqliteDocumentStore {
     ) -> Result<Vec<DbRecord>, AppError> {
         let conn = open_connection(&self.db_path)?;
         let limit = u64::from(limit.unwrap_or(100));
-        let path = if json_path.starts_with("$.") {
-            json_path.to_string()
-        } else {
-            format!("$.{json_path}")
+        let direct_column = match (table, json_path) {
+            (Table::Chapters, "comicId" | "$.comicId") => Some("comic_id"),
+            (Table::ReadProgress, "chapterId" | "$.chapterId") => Some("chapter_id"),
+            (Table::ReadProgress, "comicId" | "$.comicId") => Some("comic_id"),
+            _ => None,
         };
-        let value_sql =
-            serde_json::to_string(&value).map_err(|e| AppError::infrastructure(e.to_string()))?;
 
         let mut query = Query::select();
         query
@@ -155,14 +209,31 @@ impl DocumentStore for SqliteDocumentStore {
                 Alias::new("created_at"),
                 Alias::new("updated_at"),
             ])
-            .from(Alias::new(table.as_str()))
-            .and_where(Expr::cust_with_values(
+            .from(Alias::new(table.as_str()));
+
+        if let Some(column_name) = direct_column {
+            let scalar_value = value
+                .as_str()
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| value.to_string());
+            query.and_where(Expr::col(Alias::new(column_name)).eq(scalar_value));
+        } else {
+            let path = if json_path.starts_with("$.") {
+                json_path.to_string()
+            } else {
+                format!("$.{json_path}")
+            };
+            let value_sql = serde_json::to_string(&value)
+                .map_err(|e| AppError::infrastructure(e.to_string()))?;
+            query.and_where(Expr::cust_with_values(
                 "json_extract(data, ?) = json_extract(json(?), '$')",
                 vec![
                     SeaValue::String(Some(path)),
                     SeaValue::String(Some(value_sql)),
                 ],
-            ))
+            ));
+        }
+        query
             .order_by(Alias::new("updated_at"), Order::Desc)
             .limit(limit);
 
@@ -195,6 +266,136 @@ impl DocumentStore for SqliteDocumentStore {
             .execute(&sql, params.as_slice())
             .map_err(|e| AppError::infrastructure(e.to_string()))?;
         Ok(affected > 0)
+    }
+
+    fn mark_chapters_read_state(
+        &self,
+        chapter_ids: &[String],
+        read: bool,
+    ) -> Result<(usize, usize), AppError> {
+        let mut conn = open_connection(&self.db_path)?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::infrastructure(e.to_string()))?;
+
+        let read_json = if read { "true" } else { "false" };
+        let progress_json = if read { "100" } else { "0" };
+        let update_chapter_sql = format!(
+            "
+            UPDATE chapters
+            SET
+              data = json_set(
+                json_set(data, '$.isRead', json(?1)),
+                '$.progress',
+                json(?2)
+              ),
+              updated_at = ({timestamp})
+            WHERE id = ?3;
+            ",
+            timestamp = TIMESTAMP_SQL
+        );
+
+        let mut update_chapter_stmt = tx
+            .prepare(&update_chapter_sql)
+            .map_err(|e| AppError::infrastructure(e.to_string()))?;
+        let mut chapter_meta_stmt = tx
+            .prepare(
+                "
+                SELECT json_extract(data, '$.comicId')
+                FROM chapters
+                WHERE id = ?1
+                LIMIT 1;
+                ",
+            )
+            .map_err(|e| AppError::infrastructure(e.to_string()))?;
+        let mut existing_total_pages_stmt = tx
+            .prepare(
+                "
+                SELECT json_extract(data, '$.totalPages')
+                FROM read_progress
+                WHERE json_extract(data, '$.chapterId') = ?1
+                ORDER BY updated_at DESC
+                LIMIT 1;
+                ",
+            )
+            .map_err(|e| AppError::infrastructure(e.to_string()))?;
+        let upsert_read_progress_sql = format!(
+            "
+            INSERT INTO read_progress (id, data, chapter_id, comic_id)
+            VALUES (
+              ?1,
+              json(?2),
+              json_extract(json(?2), '$.chapterId'),
+              json_extract(json(?2), '$.comicId')
+            )
+            ON CONFLICT(id) DO UPDATE SET
+              data = json(?2),
+              chapter_id = json_extract(json(?2), '$.chapterId'),
+              comic_id = json_extract(json(?2), '$.comicId'),
+              updated_at = ({timestamp});
+            ",
+            timestamp = TIMESTAMP_SQL
+        );
+        let mut upsert_read_progress_stmt = tx
+            .prepare(&upsert_read_progress_sql)
+            .map_err(|e| AppError::infrastructure(e.to_string()))?;
+
+        let mut updated = 0usize;
+        let mut skipped = 0usize;
+        let mut seen = HashSet::new();
+
+        for chapter_id in chapter_ids {
+            if !seen.insert(chapter_id) {
+                continue;
+            }
+
+            let affected = update_chapter_stmt
+                .execute(params![read_json, progress_json, chapter_id])
+                .map_err(|e| AppError::infrastructure(e.to_string()))?;
+
+            if affected > 0 {
+                updated += affected;
+
+                let comic_id: String = chapter_meta_stmt
+                    .query_row(params![chapter_id], |row| row.get::<_, Option<String>>(0))
+                    .optional()
+                    .map_err(|e| AppError::infrastructure(e.to_string()))?
+                    .flatten()
+                    .unwrap_or_default();
+
+                let existing_total_pages = existing_total_pages_stmt
+                    .query_row(params![chapter_id], |row| row.get::<_, Option<i64>>(0))
+                    .optional()
+                    .map_err(|e| AppError::infrastructure(e.to_string()))?
+                    .flatten()
+                    .unwrap_or(1);
+
+                let total_pages = std::cmp::max(existing_total_pages, 1);
+                let page = if read { total_pages } else { 0 };
+                let payload = serde_json::json!({
+                    "chapterId": chapter_id,
+                    "comicId": comic_id,
+                    "totalPages": total_pages,
+                    "page": page
+                });
+                let payload_str = serde_json::to_string(&payload)
+                    .map_err(|e| AppError::infrastructure(e.to_string()))?;
+                upsert_read_progress_stmt
+                    .execute(params![chapter_id, payload_str])
+                    .map_err(|e| AppError::infrastructure(e.to_string()))?;
+            } else {
+                skipped += 1;
+            }
+        }
+
+        drop(upsert_read_progress_stmt);
+        drop(existing_total_pages_stmt);
+        drop(chapter_meta_stmt);
+        drop(update_chapter_stmt);
+        tx.commit()
+            .map_err(|e| AppError::infrastructure(e.to_string()))?;
+
+        Ok((updated, skipped))
     }
 }
 

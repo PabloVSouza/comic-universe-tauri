@@ -20,6 +20,8 @@ interface AppStore {
   hydrateAccount: (account: AccountSession | null) => void
   setAccount: (account: AccountSession | null) => void
   logout: () => void
+  isMobileListOpen: boolean
+  setMobileListOpen: (open: boolean) => void
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -31,5 +33,7 @@ export const useAppStore = create<AppStore>((set) => ({
   accountHydrated: false,
   hydrateAccount: (account: AccountSession | null) => set({ account, accountHydrated: true }),
   setAccount: (account: AccountSession | null) => set({ account }),
-  logout: () => set({ account: null })
+  logout: () => set({ account: null }),
+  isMobileListOpen: false,
+  setMobileListOpen: (open: boolean) => set({ isMobileListOpen: open })
 }))

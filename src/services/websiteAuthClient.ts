@@ -95,6 +95,18 @@ export interface WebsiteRegisterResponse {
   }
 }
 
+export interface WebsiteGenerateAppTokenRequest {
+  userId: string
+  deviceName?: string
+}
+
+export interface WebsiteGenerateAppTokenResponse {
+  message: string
+  token: string
+  expiresAt: string
+  deviceName: string
+}
+
 export async function websiteAppLogin(
   payload: WebsiteAppLoginRequest
 ): Promise<WebsiteAppLoginResponse> {
@@ -115,6 +127,15 @@ export async function websiteRegister(
   payload: WebsiteRegisterRequest
 ): Promise<WebsiteRegisterResponse> {
   return requestJson<WebsiteRegisterResponse>(`${websiteApiBaseUrl}/api/auth/register`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  })
+}
+
+export async function websiteGenerateAppToken(
+  payload: WebsiteGenerateAppTokenRequest
+): Promise<WebsiteGenerateAppTokenResponse> {
+  return requestJson<WebsiteGenerateAppTokenResponse>(`${websiteApiBaseUrl}/api/auth/app-token`, {
     method: 'POST',
     body: JSON.stringify(payload)
   })

@@ -21,6 +21,11 @@ pub trait DocumentStore: Send + Sync {
         limit: Option<u32>,
     ) -> Result<Vec<DbRecord>, AppError>;
     fn delete(&self, table: Table, id: &str) -> Result<bool, AppError>;
+    fn mark_chapters_read_state(
+        &self,
+        chapter_ids: &[String],
+        read: bool,
+    ) -> Result<(usize, usize), AppError>;
 }
 
 pub trait LegacyImporter: Send + Sync {
@@ -80,6 +85,14 @@ impl DocumentService {
     pub fn delete(&self, table_name: &str, id: &str) -> Result<bool, AppError> {
         let table = Table::parse(table_name)?;
         self.store.delete(table, id)
+    }
+
+    pub fn mark_chapters_read_state(
+        &self,
+        chapter_ids: &[String],
+        read: bool,
+    ) -> Result<(usize, usize), AppError> {
+        self.store.mark_chapters_read_state(chapter_ids, read)
     }
 }
 
@@ -179,6 +192,18 @@ mod tests {
                 .expect("poisoned")
                 .push(format!("delete:{}:{id}", table.as_str()));
             Ok(true)
+        }
+
+        fn mark_chapters_read_state(
+            &self,
+            _chapter_ids: &[String],
+            _read: bool,
+        ) -> Result<(usize, usize), AppError> {
+            self.calls
+                .lock()
+                .expect("poisoned")
+                .push("mark:chapters".to_string());
+            Ok((0, 0))
         }
     }
 

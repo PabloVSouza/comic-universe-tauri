@@ -1,17 +1,12 @@
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { Avatar, AvatarFallback, AvatarImage } from 'components/ui/avatar'
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from 'components/ui/sheet'
 import { FC } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Avatar, AvatarFallback, AvatarImage } from 'components/ui/avatar'
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetTrigger
-} from 'components/ui/sheet'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { useAppStore } from 'stores'
-import { AppMenuRow } from './AppMenuRow'
 import { AppMenuHeader } from './AppMenuHeader'
 import { createMenuItems } from './AppMenuItems'
+import { AppMenuRow } from './AppMenuRow'
 
 export const AppMenuSheet: FC = () => {
   const { t } = useTranslation()
@@ -60,7 +55,7 @@ export const AppMenuSheet: FC = () => {
           side="right"
           showCloseButton={false}
           onOpenAutoFocus={(event) => event.preventDefault()}
-          className="w-[252px] gap-0 border-l border-black/10 bg-[#dbd9de]/88 p-0 backdrop-blur-xl"
+          className="w-[252px] gap-px border-l border-border/60 bg-background/95 p-0 shadow-2xl shadow-black/40 supports-[backdrop-filter]:bg-background/82 supports-[backdrop-filter]:backdrop-blur-xl"
         >
           <AppMenuHeader
             profileName={profileName}
@@ -68,6 +63,9 @@ export const AppMenuSheet: FC = () => {
             avatarFallback={avatarFallback}
           />
           <SheetTitle className="sr-only">{t('topbar.menu.title')}</SheetTitle>
+          <SheetDescription className="sr-only">
+            {t('topbar.menu.openMenu')}
+          </SheetDescription>
 
           <div className="py-0.5">
             {menuItems.map((item) => (

@@ -1,11 +1,19 @@
 import { FC, ComponentProps, MouseEvent } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { BgBox } from 'components'
+import { Button } from 'components/ui/button'
 import { cn } from 'utils'
 import { logoIcon } from 'assets'
+import { PanelLeftOpen } from 'lucide-react'
+import { useAppStore } from 'stores'
 import { AppMenuSheet } from './index'
 
 export const TopBar: FC<ComponentProps<'div'>> = ({ className, ...props }) => {
+  const setMobileListOpen = useAppStore((state) => state.setMobileListOpen)
+  const { onOpenMobileList: _legacyOnOpenMobileList, ...domProps } = props as ComponentProps<'div'> & {
+    onOpenMobileList?: unknown
+  }
+
   const handleWindowDrag = (event: MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return
 
@@ -20,10 +28,22 @@ export const TopBar: FC<ComponentProps<'div'>> = ({ className, ...props }) => {
     <BgBox
       onMouseDown={handleWindowDrag}
       className={cn('relative flex h-14 items-center px-3 select-none', className)}
-      {...props}
+      {...domProps}
     >
       <div data-tauri-drag-region className="absolute inset-0" />
       <div data-tauri-drag-region className="z-10 flex min-w-0 flex-1 items-center gap-2" />
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className="absolute left-3 z-30 md:hidden hover:bg-white/10"
+        aria-label="Open list"
+        data-no-window-drag
+        onClick={() => setMobileListOpen(true)}
+      >
+        <PanelLeftOpen className="size-4" />
+      </Button>
 
       <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
         <img src={logoIcon} alt="Comic Universe" className="h-8 w-auto object-contain" />

@@ -1,5 +1,5 @@
-import { FC } from 'react'
 import { logoIcon } from 'assets'
+import { FC } from 'react'
 
 interface MainContentHeaderProps {
   title: string
@@ -17,20 +17,22 @@ export const MainContentHeader: FC<MainContentHeaderProps> = ({
   coverUrl
 }) => {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_8rem] gap-px bg-border/40">
-      <div className="bg-background/80 p-3">
-        <div className="text-center">
-          <h1 className="text-[2rem] leading-tight">{title}</h1>
-          {publisher ? <p className="text-sm text-muted-foreground">{publisher}</p> : null}
+    <div className="flex h-72 min-h-0 w-full gap-px">
+      <div className="flex min-w-0 flex-1 flex-col bg-background">
+        <div className="shrink-0 p-3 text-center">
+          <h1 className="text-2xl font-thin leading-tight">{title}</h1>
+          {publisher ? <p className="text-sm text-muted-foreground/90">{publisher}</p> : null}
           {status ? <p className="text-base">{status}</p> : null}
         </div>
-        <p className="mt-3 text-sm leading-relaxed text-foreground/90">{synopsis || '-'}</p>
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+          <p className="text-sm leading-relaxed text-foreground/90">{synopsis || '-'}</p>
+        </div>
       </div>
-      <div className="bg-background/80 p-1">
+      <div className="sticky right-0 shrink-0 bg-background p-1 ">
         <img
           src={coverUrl || logoIcon}
           alt={title}
-          className="h-full w-full rounded-sm object-cover"
+          className="h-full w-full rounded-sm object-contain object-center"
           loading="lazy"
         />
       </div>

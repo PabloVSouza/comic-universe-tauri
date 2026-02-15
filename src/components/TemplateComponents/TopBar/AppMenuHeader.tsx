@@ -13,10 +13,10 @@ export const AppMenuHeader: FC<AppMenuHeaderProps> = ({
   avatarFallback
 }) => {
   return (
-    <div className="flex h-16 items-center gap-3 border-b border-black/10 bg-white/35 px-3.5">
-      <Avatar className="size-9 border border-black/10 bg-white/70">
+    <div className="flex h-16 items-center gap-3 bg-background px-3.5">
+      <Avatar className="size-9 border border-border/50 bg-background">
         <AvatarImage src={undefined} alt={profileName} />
-        <AvatarFallback className="bg-white/60 text-xs font-semibold text-foreground">
+        <AvatarFallback className="bg-background text-xs font-semibold text-foreground">
           {avatarFallback}
         </AvatarFallback>
       </Avatar>

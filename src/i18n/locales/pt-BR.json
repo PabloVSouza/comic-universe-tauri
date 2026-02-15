@@ -31,7 +31,7 @@
         "password": "Senha"
       },
       "placeholders": {
-        "email": "voce@email.com",
+        "email": "seu@email.com",
         "password": "********"
       },
       "actions": {
@@ -57,7 +57,7 @@
         "confirmPassword": "Confirmar senha"
       },
       "placeholders": {
-        "email": "voce@email.com",
+        "email": "seu@email.com",
         "username": "usuario",
         "displayName": "Seu nome",
         "password": "********",
@@ -88,7 +88,7 @@
     },
     "chapterTable": {
       "headers": {
-        "chapter": "Capítulo",
+        "chapter": "Ch.",
         "name": "Nome",
         "progress": "Progresso",
         "read": "Lido"
@@ -110,7 +110,27 @@
         "markRead": "Marcar lido",
         "markUnread": "Marcar não lido"
       },
+      "mobile": {
+        "selectChapters": "Selecionar",
+        "doneSelection": "Concluir"
+      },
       "empty": "Nenhum capítulo encontrado."
     }
+  },
+  "mainContent.nav.actions.read": "Ler de onde parou",
+  "reader": {
+    "back": "Voltar",
+    "close": "Fechar leitor",
+    "settings": "Configurações de leitura",
+    "verticalReading": "Leitura vertical",
+    "rightToLeft": "Leitura da direita para esquerda",
+    "doublePageSpread": "Página dupla",
+    "previousChapter": "Capítulo anterior",
+    "nextChapter": "Próximo capítulo",
+    "previousPage": "Página anterior",
+    "nextPage": "Próxima página",
+    "loadingPages": "Carregando páginas...",
+    "failedToLoadPages": "Falha ao carregar páginas do capítulo.",
+    "noPages": "Não há páginas disponíveis para este capítulo."
   }
 }

@@ -8,6 +8,7 @@ use std::{
     path::{Path as FsPath, PathBuf},
     sync::Mutex,
 };
+use serde_json::Value;
 
 use axum::{
     extract::{Path, Query, State},
@@ -23,7 +24,6 @@ use tower_http::cors::CorsLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 use zip::ZipArchive;
-use serde_json::Value;
 
 use crate::{
     application::{AdminService, DocumentService},
@@ -392,28 +392,42 @@ async fn list_chapter_pages(
         &comic_name,
         &chapter_name,
         chapter_number.as_deref(),
-    )
-    .ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            "Chapter CBZ file not found in comics directory".to_string(),
-        )
-    })?;
+    );
 
-    let entries = list_image_entries(&cbz_path).map_err(internal_error)?;
-    if entries.is_empty() {
-        return Err((StatusCode::NOT_FOUND, "CBZ has no image pages".to_string()));
-    }
+    let pages = if let Some(cbz_path) = cbz_path {
+        let entries = list_image_entries(&cbz_path).map_err(internal_error)?;
+        if entries.is_empty() {
+            return Err((StatusCode::NOT_FOUND, "CBZ has no image pages".to_string()));
+        }
 
-    let pages = entries
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| ChapterPage {
-            index,
-            file_name: entry.file_name.clone(),
-            url: format!("/api/chapters/{chapter_id}/pages/{index}"),
-        })
-        .collect::<Vec<_>>();
+        entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| ChapterPage {
+                index,
+                file_name: entry.file_name.clone(),
+                url: format!("/api/chapters/{chapter_id}/pages/{index}"),
+            })
+            .collect::<Vec<_>>()
+    } else {
+        let external_pages = chapter_external_pages(&chapter);
+        if external_pages.is_empty() {
+            return Err((
+                StatusCode::NOT_FOUND,
+                "Chapter has no local CBZ and no pages array in database".to_string(),
+            ));
+        }
+
+        external_pages
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| ChapterPage {
+                index,
+                file_name: entry.file_name.clone(),
+                url: format!("/api/chapters/{chapter_id}/pages/{index}"),
+            })
+            .collect::<Vec<_>>()
+    };
 
     Ok(Json(ChapterPagesResponse {
         chapter_id,
@@ -471,24 +485,57 @@ async fn get_chapter_page(
         &comic_name,
         &chapter_name,
         chapter_number.as_deref(),
-    )
-    .ok_or_else(|| {
-        (
-            StatusCode::NOT_FOUND,
-            "Chapter CBZ file not found in comics directory".to_string(),
-        )
-    })?;
+    );
 
-    let entries = list_image_entries(&cbz_path).map_err(internal_error)?;
-    let page = entries.get(page_index).ok_or_else(|| {
+    if let Some(cbz_path) = cbz_path {
+        let entries = list_image_entries(&cbz_path).map_err(internal_error)?;
+        let page = entries.get(page_index).ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "Page index out of bounds".to_string(),
+            )
+        })?;
+
+        let bytes = read_entry_bytes(&cbz_path, page.archive_index).map_err(internal_error)?;
+        let content_type = from_path(&page.file_name).first_or_octet_stream();
+
+        return Ok((
+            [
+                (header::CONTENT_TYPE, content_type.to_string()),
+                (header::CACHE_CONTROL, "public, max-age=300".to_string()),
+            ],
+            bytes,
+        )
+            .into_response());
+    }
+
+    let external_pages = chapter_external_pages(&chapter);
+    let external = external_pages.get(page_index).ok_or_else(|| {
         (
             StatusCode::NOT_FOUND,
             "Page index out of bounds".to_string(),
         )
     })?;
 
-    let bytes = read_entry_bytes(&cbz_path, page.archive_index).map_err(internal_error)?;
-    let content_type = from_path(&page.file_name).first_or_octet_stream();
+    if external.source.starts_with("http://") || external.source.starts_with("https://") {
+        return Ok(Redirect::temporary(&external.source).into_response());
+    }
+
+    let file_path = resolve_external_page_file_path(&state.comics_dir, &external.source)
+        .ok_or_else(|| {
+            (
+                StatusCode::NOT_FOUND,
+                "External page source is not a supported URL or local file path".to_string(),
+            )
+        })?;
+
+    let bytes = fs::read(&file_path).map_err(|error| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to read chapter page file: {error}"),
+        )
+    })?;
+    let content_type = from_path(&file_path).first_or_octet_stream();
 
     Ok((
         [
@@ -496,7 +543,8 @@ async fn get_chapter_page(
             (header::CACHE_CONTROL, "public, max-age=300".to_string()),
         ],
         bytes,
-    ))
+    )
+        .into_response())
 }
 
 #[utoipa::path(
@@ -575,37 +623,10 @@ async fn mark_chapters_read_state(
         return Err((StatusCode::BAD_REQUEST, "chapterIds cannot be empty".to_string()));
     }
 
-    let mut updated = 0usize;
-    let mut skipped = 0usize;
-    let mut seen = HashSet::new();
-
-    for chapter_id in payload.chapter_ids {
-        if !seen.insert(chapter_id.clone()) {
-            continue;
-        }
-
-        let Some(mut chapter) = state.service.get("chapters", &chapter_id).map_err(internal_error)? else {
-            skipped += 1;
-            continue;
-        };
-
-        let Some(data) = chapter.data.as_object_mut() else {
-            skipped += 1;
-            continue;
-        };
-
-        data.insert("isRead".to_string(), Value::Bool(payload.read));
-        data.insert(
-            "progress".to_string(),
-            Value::from(if payload.read { 100 } else { 0 }),
-        );
-
-        state
-            .service
-            .upsert("chapters", Some(chapter.id.clone()), chapter.data)
-            .map_err(internal_error)?;
-        updated += 1;
-    }
+    let (updated, skipped) = state
+        .service
+        .mark_chapters_read_state(&payload.chapter_ids, payload.read)
+        .map_err(internal_error)?;
 
     Ok(Json(MarkChaptersResponse { updated, skipped }))
 }
@@ -682,6 +703,108 @@ fn chapter_display_name(chapter: &DbRecord) -> String {
             chapter_value_as_string(chapter, "number").map(|number| format!("Chapter {number}"))
         })
         .unwrap_or_else(|| "chapter".to_string())
+}
+
+#[derive(Clone)]
+struct ExternalPageEntry {
+    file_name: String,
+    source: String,
+}
+
+fn chapter_external_pages(chapter: &DbRecord) -> Vec<ExternalPageEntry> {
+    let Some(values) = chapter.data.get("pages").and_then(|value| value.as_array()) else {
+        return Vec::new();
+    };
+
+    values
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| external_page_entry(value, index))
+        .collect()
+}
+
+fn external_page_entry(value: &Value, index: usize) -> Option<ExternalPageEntry> {
+    match value {
+        Value::String(source) => {
+            let source = source.trim();
+            if source.is_empty() {
+                return None;
+            }
+
+            Some(ExternalPageEntry {
+                file_name: infer_page_file_name(source, index, None),
+                source: source.to_string(),
+            })
+        }
+        Value::Object(map) => {
+            let source = map
+                .get("url")
+                .or_else(|| map.get("src"))
+                .or_else(|| map.get("path"))
+                .or_else(|| map.get("data"))
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())?;
+            let explicit_name = map.get("fileName").or_else(|| map.get("name")).and_then(|value| {
+                value
+                    .as_str()
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+            });
+
+            Some(ExternalPageEntry {
+                file_name: infer_page_file_name(source, index, explicit_name),
+                source: source.to_string(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn infer_page_file_name(source: &str, index: usize, explicit_name: Option<&str>) -> String {
+    if let Some(name) = explicit_name {
+        return name.to_string();
+    }
+
+    let without_query = source
+        .split_once('?')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(source);
+
+    let name = FsPath::new(without_query)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    match name {
+        Some(value) => value.to_string(),
+        None => format!("page-{}.jpg", index + 1),
+    }
+}
+
+fn resolve_external_page_file_path(comics_dir: &FsPath, source: &str) -> Option<PathBuf> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let direct = FsPath::new(trimmed);
+    if direct.is_file() {
+        return Some(direct.to_path_buf());
+    }
+
+    let normalized = trimmed.trim_start_matches('/');
+    if normalized.is_empty() || normalized.contains("..") {
+        return None;
+    }
+
+    let under_comics = comics_dir.join(normalized);
+    if under_comics.is_file() {
+        return Some(under_comics);
+    }
+
+    None
 }
 
 fn resolve_chapter_cbz_path(

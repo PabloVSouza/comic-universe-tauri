@@ -18,8 +18,8 @@ export const AppMenuRow: FC<AppMenuRowProps> = ({
       type="button"
       onClick={onClick}
       className={[
-        'flex h-12 w-full items-center gap-3 px-3.5 text-left text-foreground/80 hover:bg-black/6',
-        withBorder ? 'border-b border-black/10' : ''
+        'flex h-12 w-full items-center gap-3 bg-background px-3.5 text-left text-foreground/80 hover:bg-muted/60',
+        withBorder ? 'border-b border-border/50' : ''
       ].join(' ')}
     >
       {icon}

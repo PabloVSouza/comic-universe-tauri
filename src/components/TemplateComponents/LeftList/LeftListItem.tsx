@@ -25,8 +25,8 @@ export const LeftListItem: FC<LeftListItemProps> = ({
       variant="ghost"
       onClick={onClick}
       className={cn(
-        'flex h-14 w-full items-center justify-start gap-3 rounded-none px-2 text-left text-sm hover:bg-white/6',
-        active ? 'bg-white/12' : 'bg-transparent'
+        'flex h-14 w-full items-center justify-start gap-3 rounded-none bg-background px-2 text-left text-sm hover:bg-accent/50',
+        active ? 'bg-primary/35 text-foreground ring-1 ring-primary/70 shadow-[0_0_18px_-8px_hsl(var(--primary))]' : ''
       )}
     >
       <Avatar className="h-10 w-8 rounded-sm border border-white/10 bg-black/20">

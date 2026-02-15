@@ -246,6 +246,8 @@ const MeteorShower: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const meteorsRef = useRef<Meteor[]>([])
   const animationRef = useRef<number | undefined>(undefined)
+  const resizeRafRef = useRef<number | undefined>(undefined)
+  const resizingUntilRef = useRef<number>(0)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -254,8 +256,14 @@ const MeteorShower: React.FC = () => {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    canvas.width = window.innerWidth
-    canvas.height = window.innerHeight
+    const applyCanvasSize = () => {
+      const width = Math.max(1, Math.floor(window.innerWidth))
+      const height = Math.max(1, Math.floor(window.innerHeight))
+      if (canvas.width !== width) canvas.width = width
+      if (canvas.height !== height) canvas.height = height
+    }
+
+    applyCanvasSize()
 
     meteorsRef.current = []
     for (let i = 0; i < 2; i++) {
@@ -263,6 +271,12 @@ const MeteorShower: React.FC = () => {
     }
 
     const animate = () => {
+      // Skip heavy draw while user is actively resizing the window.
+      if (Date.now() < resizingUntilRef.current) {
+        animationRef.current = requestAnimationFrame(animate)
+        return
+      }
+
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
       meteorsRef.current.forEach((meteor) => {
@@ -276,8 +290,13 @@ const MeteorShower: React.FC = () => {
     animate()
 
     const handleResize = () => {
-      canvas.width = window.innerWidth
-      canvas.height = window.innerHeight
+      resizingUntilRef.current = Date.now() + 140
+      if (resizeRafRef.current) {
+        cancelAnimationFrame(resizeRafRef.current)
+      }
+      resizeRafRef.current = requestAnimationFrame(() => {
+        applyCanvasSize()
+      })
     }
 
     window.addEventListener('resize', handleResize)
@@ -285,6 +304,9 @@ const MeteorShower: React.FC = () => {
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current)
+      }
+      if (resizeRafRef.current) {
+        cancelAnimationFrame(resizeRafRef.current)
       }
       window.removeEventListener('resize', handleResize)
     }
