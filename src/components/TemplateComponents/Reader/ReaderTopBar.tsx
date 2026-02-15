@@ -1,7 +1,6 @@
 import { FC } from 'react'
 import { ArrowRight, BookOpen, BookOpenCheck, Columns2, Rows3, X } from 'lucide-react'
-import { Button } from 'components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from 'components/ui/tooltip'
+import { IconTooltipButton } from 'components'
 import { useTranslation } from 'react-i18next'
 
 interface ReaderTopBarProps {
@@ -41,74 +40,35 @@ export const ReaderTopBar: FC<ReaderTopBarProps> = ({
       </div>
 
       <div className="z-20 flex items-center gap-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="h-8 w-8 transition-colors hover:bg-accent/70"
-              aria-label={t('reader.verticalReading')}
-              onClick={() => onSetReadingMode(readingMode !== 'vertical')}
-            >
-              {readingMode === 'vertical' ? (
-                <Rows3 className="size-4" />
-              ) : (
-                <Columns2 className="size-4" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('reader.verticalReading')}</TooltipContent>
-        </Tooltip>
+        <IconTooltipButton
+          label={t('reader.verticalReading')}
+          onClick={() => onSetReadingMode(readingMode !== 'vertical')}
+          icon={readingMode === 'vertical' ? <Rows3 className="size-4" /> : <Columns2 className="size-4" />}
+        />
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="h-8 w-8 transition-colors hover:bg-accent/70"
-              aria-label={t('reader.rightToLeft')}
-              onClick={() => onSetReadingDirection(readingDirection !== 'rtl')}
-            >
-              <ArrowRight className={`size-4 transition-transform ${readingDirection === 'rtl' ? 'rotate-180' : ''}`} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('reader.rightToLeft')}</TooltipContent>
-        </Tooltip>
+        <IconTooltipButton
+          label={t('reader.rightToLeft')}
+          onClick={() => onSetReadingDirection(readingDirection !== 'rtl')}
+          icon={
+            <ArrowRight
+              className={`size-4 transition-transform ${readingDirection === 'rtl' ? 'rotate-180' : ''}`}
+            />
+          }
+        />
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="h-8 w-8 transition-colors hover:bg-accent/70"
-              aria-label={t('reader.doublePageSpread')}
-              onClick={() => onSetDoublePageSpread(!doublePageSpread)}
-              disabled={readingMode !== 'horizontal' || disableDoublePageSpread}
-            >
-              {doublePageSpread ? <BookOpenCheck className="size-4" /> : <BookOpen className="size-4" />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('reader.doublePageSpread')}</TooltipContent>
-        </Tooltip>
+        <IconTooltipButton
+          label={t('reader.doublePageSpread')}
+          onClick={() => onSetDoublePageSpread(!doublePageSpread)}
+          disabled={readingMode !== 'horizontal' || disableDoublePageSpread}
+          icon={doublePageSpread ? <BookOpenCheck className="size-4" /> : <BookOpen className="size-4" />}
+        />
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              className="h-8 w-8 rounded-full transition-colors hover:bg-accent/70"
-              onClick={onClose}
-              aria-label={t('reader.close')}
-            >
-              <X className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('reader.close')}</TooltipContent>
-        </Tooltip>
+        <IconTooltipButton
+          label={t('reader.close')}
+          onClick={onClose}
+          className="h-8 w-8 rounded-full transition-colors hover:bg-accent/70"
+          icon={<X className="size-4" />}
+        />
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
 export * from './ReaderBottomBar'
+export * from './ReaderOverlayControls'
 export * from './ReaderZoomWindow'
 export * from './ReaderTopBar'
 export * from './HorizontalReader'

@@ -278,30 +278,20 @@ impl DocumentStore for SqliteDocumentStore {
             .transaction()
             .map_err(|e| AppError::infrastructure(e.to_string()))?;
 
-        let read_json = if read { "true" } else { "false" };
-        let progress_json = if read { "100" } else { "0" };
-        let update_chapter_sql = format!(
-            "
-            UPDATE chapters
-            SET
-              data = json_set(
-                json_set(data, '$.isRead', json(?1)),
-                '$.progress',
-                json(?2)
-              ),
-              updated_at = ({timestamp})
-            WHERE id = ?3;
-            ",
-            timestamp = TIMESTAMP_SQL
-        );
-
-        let mut update_chapter_stmt = tx
-            .prepare(&update_chapter_sql)
-            .map_err(|e| AppError::infrastructure(e.to_string()))?;
         let mut chapter_meta_stmt = tx
             .prepare(
                 "
                 SELECT json_extract(data, '$.comicId')
+                FROM chapters
+                WHERE id = ?1
+                LIMIT 1;
+                ",
+            )
+            .map_err(|e| AppError::infrastructure(e.to_string()))?;
+        let mut chapter_exists_stmt = tx
+            .prepare(
+                "
+                SELECT 1
                 FROM chapters
                 WHERE id = ?1
                 LIMIT 1;
@@ -349,12 +339,13 @@ impl DocumentStore for SqliteDocumentStore {
                 continue;
             }
 
-            let affected = update_chapter_stmt
-                .execute(params![read_json, progress_json, chapter_id])
+            let exists = chapter_exists_stmt
+                .query_row(params![chapter_id], |row| row.get::<_, i64>(0))
+                .optional()
                 .map_err(|e| AppError::infrastructure(e.to_string()))?;
 
-            if affected > 0 {
-                updated += affected;
+            if exists.is_some() {
+                updated += 1;
 
                 let comic_id: String = chapter_meta_stmt
                     .query_row(params![chapter_id], |row| row.get::<_, Option<String>>(0))
@@ -390,8 +381,8 @@ impl DocumentStore for SqliteDocumentStore {
 
         drop(upsert_read_progress_stmt);
         drop(existing_total_pages_stmt);
+        drop(chapter_exists_stmt);
         drop(chapter_meta_stmt);
-        drop(update_chapter_stmt);
         tx.commit()
             .map_err(|e| AppError::infrastructure(e.to_string()))?;
 

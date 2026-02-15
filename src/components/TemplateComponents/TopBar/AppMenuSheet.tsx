@@ -54,7 +54,6 @@ export const AppMenuSheet: FC = () => {
         <SheetContent
           side="right"
           showCloseButton={false}
-          onOpenAutoFocus={(event) => event.preventDefault()}
           className="w-[252px] gap-px border-l border-border/60 bg-background/95 p-0 shadow-2xl shadow-black/40 supports-[backdrop-filter]:bg-background/82 supports-[backdrop-filter]:backdrop-blur-xl"
         >
           <AppMenuHeader

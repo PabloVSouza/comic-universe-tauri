@@ -8,9 +8,7 @@ import {
   useWebsiteGenerateAppTokenMutation,
   useWebsiteVerifyTokenQuery
 } from '../services'
-import { LeftList, TopBar } from 'components'
-import { LeftNav } from './LeftNav'
-import { MainContent } from './MainContent'
+import { LeftList, LeftNav, MainContent, TopBar } from 'components'
 
 export const Home: FC = () => {
   const [selectedComicId, setSelectedComicId] = useState<string | null>(null)

@@ -1,5 +1,4 @@
+export * from './Common'
+export * from './TemplateComponents'
 export * from './ui'
 export * from './WallpaperComponents'
-export * from './BgBox'
-export * from './WindowComponents'
-export * from './TemplateComponents'
