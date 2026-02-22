@@ -8,7 +8,7 @@ use std::{
     path::{Path as FsPath, PathBuf},
     sync::Mutex,
 };
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use axum::{
     extract::{Path, Query, State},
@@ -32,8 +32,8 @@ use crate::{
 pub use dto::ApiEndpointPayload;
 use dto::{
     ChapterPage, ChapterPagesResponse, DeleteResponse, ErrorResponse, FindBody, HealthResponse,
-    ListQuery, MarkChaptersBody, MarkChaptersResponse, MigrateLegacyBody, MigrateLegacyResponse,
-    UpsertBody,
+    ImportComicBody, ImportComicResponse, ListQuery, MarkChaptersBody, MarkChaptersResponse,
+    MigrateLegacyBody, MigrateLegacyResponse, UpsertBody,
 };
 
 #[derive(Clone)]
@@ -63,6 +63,7 @@ struct CbzPageEntry {
         get_chapter_page,
         get_comic_cover,
         mark_chapters_read_state,
+        import_comic,
         migrate_legacy
     ),
     components(
@@ -77,6 +78,8 @@ struct CbzPageEntry {
             ChapterPagesResponse,
             MarkChaptersBody,
             MarkChaptersResponse,
+            ImportComicBody,
+            ImportComicResponse,
             MigrateLegacyBody,
             MigrateLegacyResponse
         )
@@ -195,6 +198,7 @@ fn build_router(state: RestState) -> Router {
         )
         .route("/api/comics/{comic_id}/cover", get(get_comic_cover))
         .route("/api/chapters/mark", post(mark_chapters_read_state))
+        .route("/api/import/comic", post(import_comic))
         .merge(SwaggerUi::new("/swagger").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .layer(CorsLayer::permissive());
 
@@ -633,6 +637,158 @@ async fn mark_chapters_read_state(
 
 #[utoipa::path(
     post,
+    path = "/api/import/comic",
+    tag = "db",
+    request_body = ImportComicBody,
+    responses(
+        (status = 200, description = "Imported comic and chapters", body = ImportComicResponse),
+        (status = 400, description = "Invalid request", body = ErrorResponse),
+        (status = 500, description = "Internal error", body = ErrorResponse)
+    )
+)]
+async fn import_comic(
+    State(state): State<RestState>,
+    Json(payload): Json<ImportComicBody>,
+) -> Result<Json<ImportComicResponse>, (StatusCode, String)> {
+    let comic_obj = payload
+        .data
+        .comic
+        .as_object()
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "Missing data.comic object".to_string()))?;
+
+    let source_tag = normalize_source_tag(
+        pick_string_from_map(comic_obj, &["sourceTag", "repo", "tag", "source", "provider"])
+            .as_deref(),
+    )
+    .unwrap_or_else(|| "web-scrapper".to_string());
+    let comic_site_id = pick_string_from_map(comic_obj, &["siteId", "id", "externalId"]);
+    let comic_site_link = pick_string_from_map(comic_obj, &["siteLink", "url", "link"]);
+    let comic_name = pick_string_from_map(comic_obj, &["name", "title"])
+        .or_else(|| comic_site_id.clone())
+        .unwrap_or_else(|| "Untitled".to_string());
+    let comic_id = stable_import_id(
+        "comic",
+        &[
+            source_tag.as_str(),
+            comic_site_id
+                .as_deref()
+                .or(comic_site_link.as_deref())
+                .or(Some(comic_name.as_str()))
+                .unwrap_or("untitled"),
+        ],
+    );
+
+    let mut comic_data = comic_obj.clone();
+    comic_data.insert("name".to_string(), Value::String(comic_name.clone()));
+    comic_data.insert(
+        "siteId".to_string(),
+        comic_site_id
+            .as_ref()
+            .map(|v| Value::String(v.clone()))
+            .unwrap_or(Value::Null),
+    );
+    comic_data.insert(
+        "siteLink".to_string(),
+        comic_site_link
+            .as_ref()
+            .map(|v| Value::String(v.clone()))
+            .unwrap_or(Value::Null),
+    );
+    comic_data.insert("sourceTag".to_string(), Value::String(source_tag.clone()));
+    comic_data
+        .entry("pluginId".to_string())
+        .or_insert(Value::String(format!("plugin:{source_tag}")));
+    comic_data
+        .entry("hasOffline".to_string())
+        .or_insert(Value::Bool(false));
+    comic_data
+        .entry("offline".to_string())
+        .or_insert(Value::Number(serde_json::Number::from(0)));
+
+    state
+        .service
+        .upsert("comics", Some(comic_id.clone()), Value::Object(comic_data))
+        .map_err(internal_error)?;
+
+    let mut chapters_imported = 0usize;
+    let mut chapters_skipped = 0usize;
+
+    for (index, chapter_raw) in payload.data.chapters.iter().enumerate() {
+        let Some(chapter_obj) = chapter_raw.as_object() else {
+            chapters_skipped += 1;
+            continue;
+        };
+
+        let pages = parse_pages_value(chapter_obj.get("pages"));
+        if pages.is_empty() {
+            chapters_skipped += 1;
+            continue;
+        }
+
+        let chapter_site_id = pick_string_from_map(chapter_obj, &["siteId", "id", "externalId"]);
+        let chapter_number = pick_string_from_map(chapter_obj, &["number", "chapterNumber"]);
+        let chapter_name = pick_string_from_map(chapter_obj, &["name", "title"]);
+
+        let chapter_id = stable_import_id(
+            "chapter",
+            &[
+                comic_id.as_str(),
+                chapter_site_id
+                    .as_deref()
+                    .or(chapter_number.as_deref())
+                    .or(chapter_name.as_deref())
+                    .unwrap_or("chapter"),
+            ],
+        );
+
+        let mut chapter_data = chapter_obj.clone();
+        chapter_data.insert("comicId".to_string(), Value::String(comic_id.clone()));
+        chapter_data.insert(
+            "siteId".to_string(),
+            chapter_site_id
+                .as_ref()
+                .map(|v| Value::String(v.clone()))
+                .unwrap_or(Value::Null),
+        );
+        chapter_data.insert(
+            "siteLink".to_string(),
+            pick_string_from_map(chapter_obj, &["siteLink", "url", "link"])
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+        );
+        chapter_data.insert(
+            "number".to_string(),
+            Value::String(chapter_number.unwrap_or_else(|| (index + 1).to_string())),
+        );
+        chapter_data.insert(
+            "name".to_string(),
+            chapter_name.map(Value::String).unwrap_or(Value::String(String::new())),
+        );
+        chapter_data.insert("pages".to_string(), Value::Array(pages));
+        chapter_data.insert("sourceTag".to_string(), Value::String(source_tag.clone()));
+        chapter_data
+            .entry("hasOffline".to_string())
+            .or_insert(Value::Bool(false));
+        chapter_data
+            .entry("offline".to_string())
+            .or_insert(Value::Number(serde_json::Number::from(0)));
+
+        state
+            .service
+            .upsert("chapters", Some(chapter_id), Value::Object(chapter_data))
+            .map_err(internal_error)?;
+        chapters_imported += 1;
+    }
+
+    Ok(Json(ImportComicResponse {
+        comic_id,
+        chapters_imported,
+        chapters_skipped,
+    }))
+}
+
+#[utoipa::path(
+    post,
     path = "/api/admin/migrate-legacy",
     tag = "db",
     request_body = MigrateLegacyBody,
@@ -695,6 +851,142 @@ fn chapter_value_as_string(record: &DbRecord, field: &str) -> Option<String> {
         .and_then(|value| value.as_str())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn pick_string_from_map(map: &Map<String, Value>, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(value) = map.get(*key) {
+            match value {
+                Value::String(raw) => {
+                    let trimmed = raw.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+                Value::Number(number) => {
+                    return Some(number.to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+fn normalize_source_tag(value: Option<&str>) -> Option<String> {
+    let raw = value?.trim().to_ascii_lowercase();
+    if raw.is_empty() {
+        return None;
+    }
+
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in raw.chars() {
+        let normalized = if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-') {
+            ch
+        } else {
+            '-'
+        };
+        if normalized == '-' {
+            if last_dash {
+                continue;
+            }
+            last_dash = true;
+        } else {
+            last_dash = false;
+        }
+        out.push(normalized);
+    }
+
+    let cleaned = out.trim_matches('-').to_string();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+fn stable_import_id(prefix: &str, parts: &[&str]) -> String {
+    let normalized = parts
+        .iter()
+        .map(|part| sanitize_segment(part).to_ascii_lowercase().replace(' ', "-"))
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(":");
+
+    if normalized.is_empty() {
+        format!("{prefix}:untitled")
+    } else {
+        format!("{prefix}:{normalized}")
+    }
+}
+
+fn infer_file_name_from_source(source: &str, index: usize) -> String {
+    let without_query = source
+        .split_once('?')
+        .map(|(prefix, _)| prefix)
+        .unwrap_or(source);
+    let file_name = FsPath::new(without_query)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string);
+
+    file_name.unwrap_or_else(|| format!("page-{}.jpg", index + 1))
+}
+
+fn parse_pages_value(value: Option<&Value>) -> Vec<Value> {
+    let Some(raw) = value else {
+        return Vec::new();
+    };
+
+    let parsed = match raw {
+        Value::Array(values) => Value::Array(values.clone()),
+        Value::String(text) => match serde_json::from_str::<Value>(text) {
+            Ok(value) => value,
+            Err(_) => return Vec::new(),
+        },
+        _ => return Vec::new(),
+    };
+
+    let Some(items) = parsed.as_array() else {
+        return Vec::new();
+    };
+
+    items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| match item {
+            Value::String(source) => {
+                let trimmed = source.trim();
+                if trimmed.is_empty() {
+                    return None;
+                }
+                Some(Value::Object(
+                    [
+                        ("url".to_string(), Value::String(trimmed.to_string())),
+                        (
+                            "fileName".to_string(),
+                            Value::String(infer_file_name_from_source(trimmed, index)),
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ))
+            }
+            Value::Object(map) => {
+                let source = pick_string_from_map(map, &["url", "src", "path", "data"])?;
+                let file_name = pick_string_from_map(map, &["fileName", "name"])
+                    .unwrap_or_else(|| infer_file_name_from_source(&source, index));
+                let mut next = map.clone();
+                next.insert("url".to_string(), Value::String(source));
+                next.insert("fileName".to_string(), Value::String(file_name));
+                Some(Value::Object(next))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 fn chapter_display_name(chapter: &DbRecord) -> String {

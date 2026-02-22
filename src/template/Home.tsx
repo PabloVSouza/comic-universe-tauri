@@ -25,7 +25,16 @@ export const Home: FC = () => {
   const { mutate: saveAccountSession } = useSaveAccountSessionMutation()
   const { mutate: clearAccountSession } = useClearAccountSessionMutation()
   const renewTokenMutation = useWebsiteGenerateAppTokenMutation()
-  const verifyTokenQuery = useWebsiteVerifyTokenQuery(account?.token)
+  const shouldRenewFromExpiry = (() => {
+    if (!account?.expiresAt) return false
+    const expiresAtMs = Date.parse(account.expiresAt)
+    if (Number.isNaN(expiresAtMs)) return false
+    const renewWindowMs = 60_000
+    return expiresAtMs <= Date.now() + renewWindowMs
+  })()
+  const verifyTokenQuery = useWebsiteVerifyTokenQuery(
+    account && !shouldRenewFromExpiry ? account.token : null
+  )
   const renewingTokenRef = useRef(false)
   const renewedFromTokenRef = useRef<string | null>(null)
   const mobileListAnimationMs = 200
@@ -62,9 +71,14 @@ export const Home: FC = () => {
         }
       })
     }
-    if (
+    const shouldRenewFromError =
       account &&
       verifyTokenQuery.isError &&
+      renewedFromTokenRef.current !== account.token
+
+    if (
+      account &&
+      (shouldRenewFromExpiry || shouldRenewFromError) &&
       !renewingTokenRef.current &&
       renewedFromTokenRef.current !== account.token
     ) {
@@ -73,12 +87,13 @@ export const Home: FC = () => {
 
       void (async () => {
         try {
+          if (!account.websiteUserId) {
+            throw new Error('Missing website user id for token renewal')
+          }
           const renewal = await renewTokenMutation.mutateAsync({
             userId: account.websiteUserId,
             deviceName: account.deviceName
           })
-
-          if (cancelled) return
 
           const renewedAccount = {
             ...account,
@@ -90,8 +105,6 @@ export const Home: FC = () => {
           setAccount(renewedAccount)
           saveAccountSession(renewedAccount)
         } catch {
-          if (cancelled) return
-
           logout()
           clearAccountSession()
           openFrame = window.requestAnimationFrame(() => {
@@ -138,6 +151,7 @@ export const Home: FC = () => {
   }, [
     account,
     accountHydrated,
+    shouldRenewFromExpiry,
     verifyTokenQuery.data,
     verifyTokenQuery.isError,
     renewTokenMutation,

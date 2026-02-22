@@ -18,7 +18,7 @@ export function useWebsiteVerifyTokenQuery(token: string | null | undefined) {
     queryKey: websiteAuthQueryKeys.verifyToken(token),
     queryFn: () => websiteVerifyAppToken(token as string),
     enabled: Boolean(token),
-    retry: 1,
+    retry: 0,
     staleTime: 60_000
   })
 }

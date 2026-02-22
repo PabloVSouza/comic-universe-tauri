@@ -179,6 +179,10 @@ export function getChapterPageUrl(chapterId: string, pageIndex: number): string 
   return `${runtimeApiBaseUrl}/chapters/${chapterId}/pages/${pageIndex}`;
 }
 
+export function getComicCoverUrl(comicId: string): string {
+  return `${runtimeApiBaseUrl}/comics/${comicId}/cover`;
+}
+
 export function setApiBaseUrl(value: string): void {
   runtimeApiBaseUrl = normalizeBaseUrl(value);
 }

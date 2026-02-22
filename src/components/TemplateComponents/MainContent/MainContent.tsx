@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { BgBox } from 'components'
 import type { ComicData } from 'services'
 import {
-  getApiBaseUrl,
+  getComicCoverUrl,
   useDbFindQuery,
   useListChaptersByComicIdQuery,
   useListComicsQuery
@@ -138,12 +138,15 @@ export const MainContent: FC<MainContentProps> = ({
   const publisher = normalizeText((comicData as Record<string, unknown>).publisher)
   const status = normalizeText((comicData as Record<string, unknown>).status) || 'Unknown'
   const synopsis = normalizeText(comicData.synopsis)
-  const coverUrl = selectedComic ? `${getApiBaseUrl()}/comics/${selectedComic.id}/cover` : undefined
+  const coverUrl = selectedComic ? getComicCoverUrl(selectedComic.id) : undefined
   const showSelectionMode = isSelectionMode || hasSelectedChapters
 
   return (
-    <BgBox className={cn('relative min-h-0 overflow-auto', className)} {...props}>
-      <div className="grid h-full grid-rows-[auto_auto_minmax(0,1fr)] gap-px">
+    <BgBox className={cn('relative min-h-0 overflow-hidden', className)} {...props}>
+      <div
+        className="grid h-full min-h-0 gap-px overflow-hidden"
+        style={{ gridTemplateRows: '18rem 3rem minmax(0, 1fr)' }}
+      >
         <MainContentHeader
           title={title}
           publisher={publisher}

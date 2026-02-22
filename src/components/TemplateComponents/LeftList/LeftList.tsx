@@ -1,6 +1,6 @@
 import { ComponentProps, FC, useEffect } from 'react'
 import { BgBox } from 'components'
-import { getApiBaseUrl, useListComicsQuery } from 'services'
+import { getComicCoverUrl, useListComicsQuery } from 'services'
 import { cn } from 'utils'
 import { LeftListItem } from './LeftListItem'
 
@@ -28,7 +28,7 @@ export const LeftList: FC<LeftListProps> = ({
       <div className="divide-y divide-white/10">
         {(comicsQuery.data ?? []).map((comic) => {
           const comicName = (comic.data.name as string | undefined) || comic.id
-          const coverUrl = `${getApiBaseUrl()}/comics/${comic.id}/cover`
+          const coverUrl = getComicCoverUrl(comic.id)
 
           return (
             <LeftListItem

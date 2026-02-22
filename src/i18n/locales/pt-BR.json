@@ -132,5 +132,28 @@
     "loadingPages": "Carregando páginas...",
     "failedToLoadPages": "Falha ao carregar páginas do capítulo.",
     "noPages": "Não há páginas disponíveis para este capítulo."
+  },
+  "searchContent": {
+    "plugins": {
+      "title": "Plugins",
+      "subtitle": "Selecione as fontes para pesquisar"
+    },
+    "search": {
+      "placeholder": "Buscar quadrinhos, mangás ou títulos...",
+      "search": "Buscar",
+      "searching": "Buscando..."
+    },
+    "labels": {
+      "chapters": "Capítulos"
+    },
+    "actions": {
+      "add": "Adicionar ao banco",
+      "adding": "Adicionando...",
+      "added": "Adicionado"
+    },
+    "empty": "Nenhum resultado disponível."
+  },
+  "leftNav": {
+    "library": "Biblioteca"
   }
 }

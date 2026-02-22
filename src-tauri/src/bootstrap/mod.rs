@@ -12,6 +12,7 @@ use std::{
 
 use app_paths::resolve_app_paths;
 use serde_json::Value;
+#[cfg(target_os = "macos")]
 use tauri::menu::Menu;
 use tauri::{Emitter, Manager, RunEvent};
 #[cfg(any(target_os = "linux", target_os = "windows"))]
@@ -33,6 +34,7 @@ fn get_machine_hostname() -> String {
 }
 
 #[tauri::command]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn minimize_main_window(app_handle: tauri::AppHandle) -> Result<(), String> {
     let window = app_handle
         .get_webview_window("main")
@@ -48,6 +50,12 @@ fn minimize_main_window(app_handle: tauri::AppHandle) -> Result<(), String> {
         })?;
 
     println!("[window] minimize_main_window succeeded");
+    Ok(())
+}
+
+#[tauri::command]
+#[cfg(any(target_os = "android", target_os = "ios"))]
+fn minimize_main_window(_app_handle: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 

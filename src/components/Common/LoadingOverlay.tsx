@@ -1,0 +1,21 @@
+import { FC } from 'react'
+import { loadingIcon } from 'assets'
+
+interface LoadingOverlayProps {
+  isLoading: boolean
+  message?: string
+}
+
+export const LoadingOverlay: FC<LoadingOverlayProps> = ({ isLoading, message }) => {
+  if (!isLoading) return null
+
+  return (
+    <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/35 supports-backdrop-filter:backdrop-blur-[2px]">
+      <div className="flex min-h-32 min-w-32 flex-col items-center justify-center gap-3 rounded bg-background/95 px-6 py-5 shadow-md supports-backdrop-filter:backdrop-blur-sm">
+        <img src={loadingIcon} alt="" className="size-16" />
+        {message ? <p className="text-sm text-foreground/90">{message}</p> : null}
+      </div>
+    </div>
+  )
+}
+

@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-#[cfg(not(debug_assertions))]
 use tauri::Manager;
 
 pub struct AppPaths {
@@ -14,21 +13,22 @@ pub struct AppPaths {
 }
 
 pub fn resolve_app_paths(_app: &tauri::App) -> Result<AppPaths, String> {
-    #[cfg(debug_assertions)]
-    let base_root = std::env::var("CU_DEV_DATA_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new("."))
-                .join("dev-data")
-        });
+    let (base_root, mode) = if let Ok(dev_root) = std::env::var("CU_DEV_DATA_DIR") {
+        (PathBuf::from(dev_root), "env:CU_DEV_DATA_DIR")
+    } else if cfg!(debug_assertions) {
+        (project_dev_data_dir(), "debug_assertions")
+    } else if is_ios_simulator_runtime() {
+        (project_dev_data_dir(), "ios_simulator_runtime")
+    } else {
+        (
+            _app.path()
+                .app_data_dir()
+                .map_err(|e| format!("Unable to resolve app data dir: {e}"))?,
+            "app_data_dir",
+        )
+    };
 
-    #[cfg(not(debug_assertions))]
-    let base_root = _app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Unable to resolve app data dir: {e}"))?;
+    println!("[app_paths] base root mode: {mode}");
 
     let profile = current_os_profile();
     let root = base_root.join("profiles").join(&profile);
@@ -58,11 +58,34 @@ pub fn resolve_app_paths(_app: &tauri::App) -> Result<AppPaths, String> {
     Ok(paths)
 }
 
+fn project_dev_data_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."))
+        .join("dev-data")
+}
+
+fn is_ios_simulator_runtime() -> bool {
+    if !cfg!(target_os = "ios") {
+        return false;
+    }
+
+    if std::env::var("SIMULATOR_DEVICE_NAME").is_ok() || std::env::var("SIMULATOR_UDID").is_ok() {
+        return true;
+    }
+
+    std::env::var("HOME")
+        .map(|home| home.contains("CoreSimulator"))
+        .unwrap_or(false)
+}
+
 fn current_os_profile() -> String {
     let raw = std::env::var("CU_OS_PROFILE")
         .ok()
         .or_else(|| std::env::var("USER").ok())
         .or_else(|| std::env::var("USERNAME").ok())
+        .or_else(|| std::env::var("LOGNAME").ok())
+        .or_else(dev_host_user_from_manifest_dir)
         .unwrap_or_else(|| "default".to_string());
 
     let cleaned: String = raw
@@ -82,4 +105,19 @@ fn current_os_profile() -> String {
     } else {
         cleaned
     }
+}
+
+fn dev_host_user_from_manifest_dir() -> Option<String> {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut prev_was_users = false;
+
+    for component in manifest.components() {
+        let segment = component.as_os_str().to_string_lossy();
+        if prev_was_users && !segment.is_empty() {
+            return Some(segment.to_string());
+        }
+        prev_was_users = segment == "Users";
+    }
+
+    None
 }

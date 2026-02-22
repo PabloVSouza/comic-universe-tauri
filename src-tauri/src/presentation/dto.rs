@@ -92,3 +92,27 @@ pub struct MarkChaptersResponse {
     pub updated: usize,
     pub skipped: usize,
 }
+
+#[derive(Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportComicBody {
+    #[serde(default)]
+    pub data: ImportComicData,
+}
+
+#[derive(Deserialize, Default, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportComicData {
+    #[serde(default)]
+    pub comic: Value,
+    #[serde(default)]
+    pub chapters: Vec<Value>,
+}
+
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportComicResponse {
+    pub comic_id: String,
+    pub chapters_imported: usize,
+    pub chapters_skipped: usize,
+}

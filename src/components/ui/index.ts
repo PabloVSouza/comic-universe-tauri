@@ -10,3 +10,4 @@ export * from "./separator";
 export * from "./skeleton";
 export * from "./table";
 export * from "./tooltip";
+export * from "./sonner";

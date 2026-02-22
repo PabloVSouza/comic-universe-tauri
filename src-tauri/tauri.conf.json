@@ -32,6 +32,9 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "iOS": {
+      "developmentTeam": "DXKRD9R234"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -42,10 +45,6 @@
   },
   "plugins": {
     "deep-link": {
-      "mobile": [
-        { "host": "comicuniverse.app", "pathPrefix": ["/open", "/plugin"] },
-        { "host": "www.comicuniverse.app", "pathPrefix": ["/open", "/plugin"] }
-      ],
       "desktop": {
         "schemes": ["comic-universe", "comic-universe-tauri"]
       }
