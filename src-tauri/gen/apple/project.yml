@@ -53,6 +53,16 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 0.1.0
         CFBundleVersion: "0.1.0"
+        NSLocalNetworkUsageDescription: Comic Universe uses the local network to communicate with its internal API service.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            comicuniverse.app:
+              NSIncludesSubdomains: true
+            www.comicuniverse.app:
+              NSIncludesSubdomains: true
+            staging.comicuniverse.app:
+              NSIncludesSubdomains: true
     scheme:
       environmentVariables:
         RUST_BACKTRACE: full

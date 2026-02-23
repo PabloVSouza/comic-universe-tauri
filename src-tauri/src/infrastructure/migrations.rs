@@ -52,6 +52,11 @@ impl SqliteMigrationRunner {
                     name: "add_relational_columns_and_indexes",
                     sql: ADD_RELATIONAL_COLUMNS_AND_INDEXES_SQL,
                 },
+                Migration {
+                    version: 8,
+                    name: "add_metadata_content_mapping_tables",
+                    sql: ADD_METADATA_CONTENT_MAPPING_TABLES_SQL,
+                },
             ],
         }
     }
@@ -369,9 +374,49 @@ CREATE TABLE IF NOT EXISTS app_state (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+CREATE TABLE IF NOT EXISTS works (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS canonical_chapters (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS chapter_variants (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS chapter_mappings (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_comics_site_id ON comics (json_extract(data, '$.siteId'));
 CREATE INDEX IF NOT EXISTS idx_chapters_comic_id ON chapters (json_extract(data, '$.comicId'));
 CREATE INDEX IF NOT EXISTS idx_changelog_synced ON changelog (json_extract(data, '$.synced'));
+CREATE INDEX IF NOT EXISTS idx_works_source_key ON works (json_extract(data, '$.sourceKey'));
+CREATE INDEX IF NOT EXISTS idx_works_title ON works (json_extract(data, '$.title'));
+CREATE INDEX IF NOT EXISTS idx_canonical_chapters_work_id ON canonical_chapters (json_extract(data, '$.workId'));
+CREATE INDEX IF NOT EXISTS idx_canonical_chapters_number ON canonical_chapters (json_extract(data, '$.number'));
+CREATE INDEX IF NOT EXISTS idx_chapter_variants_work_id ON chapter_variants (json_extract(data, '$.workId'));
+CREATE INDEX IF NOT EXISTS idx_chapter_variants_plugin_id ON chapter_variants (json_extract(data, '$.pluginId'));
+CREATE INDEX IF NOT EXISTS idx_chapter_mappings_work_id ON chapter_mappings (json_extract(data, '$.workId'));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chapter_mappings_canonical_variant_unique
+ON chapter_mappings (
+  json_extract(data, '$.canonicalChapterId'),
+  json_extract(data, '$.variantChapterId')
+);
 "#;
 
 const DROP_USERS_TABLE_SQL: &str = r#"
@@ -496,6 +541,49 @@ BEGIN
     comic_id = json_extract(NEW.data, '$.comicId')
   WHERE id = NEW.id;
 END;
+"#;
+
+const ADD_METADATA_CONTENT_MAPPING_TABLES_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS works (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS canonical_chapters (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS chapter_variants (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE TABLE IF NOT EXISTS chapter_mappings (
+  id TEXT PRIMARY KEY NOT NULL,
+  data TEXT NOT NULL CHECK (json_valid(data)),
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_works_source_key ON works (json_extract(data, '$.sourceKey'));
+CREATE INDEX IF NOT EXISTS idx_works_title ON works (json_extract(data, '$.title'));
+CREATE INDEX IF NOT EXISTS idx_canonical_chapters_work_id ON canonical_chapters (json_extract(data, '$.workId'));
+CREATE INDEX IF NOT EXISTS idx_canonical_chapters_number ON canonical_chapters (json_extract(data, '$.number'));
+CREATE INDEX IF NOT EXISTS idx_chapter_variants_work_id ON chapter_variants (json_extract(data, '$.workId'));
+CREATE INDEX IF NOT EXISTS idx_chapter_variants_plugin_id ON chapter_variants (json_extract(data, '$.pluginId'));
+CREATE INDEX IF NOT EXISTS idx_chapter_mappings_work_id ON chapter_mappings (json_extract(data, '$.workId'));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chapter_mappings_canonical_variant_unique
+ON chapter_mappings (
+  json_extract(data, '$.canonicalChapterId'),
+  json_extract(data, '$.variantChapterId')
+);
 "#;
 
 #[cfg(test)]

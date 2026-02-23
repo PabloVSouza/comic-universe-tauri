@@ -97,6 +97,8 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     );
     let service = DocumentService::new(store.clone());
     let admin_service = AdminService::new(store.clone());
+    ensure_seed_plugins(&service)
+        .map_err(|error| boxed_error(format!("Failed to seed plugins: {error}")))?;
     sync_chapters_offline_status(&service, &paths.comics)
         .map_err(|error| boxed_error(format!("Failed to sync offline chapter status: {error}")))?;
 
@@ -116,6 +118,55 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
         }
     }
 
+    Ok(())
+}
+
+fn ensure_seed_plugins(service: &DocumentService) -> Result<(), String> {
+    const HQNOW_PLUGIN_ID: &str = "plugin:hqnow";
+    const HQNOW_ENDPOINT: &str = "https://comic-universe-plugin-hqnow.vercel.app/api";
+
+    if service
+        .get("plugins", HQNOW_PLUGIN_ID)
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
+        println!("[seed] hqnow plugin already present by id");
+        return Ok(());
+    }
+
+    let existing_by_endpoint = service
+        .find_by_json_field(
+            "plugins",
+            "endpoint",
+            Value::String(HQNOW_ENDPOINT.to_string()),
+            Some(1),
+        )
+        .map_err(|e| e.to_string())?;
+    if !existing_by_endpoint.is_empty() {
+        println!("[seed] hqnow plugin already present by endpoint");
+        return Ok(());
+    }
+
+    service
+        .upsert(
+            "plugins",
+            Some(HQNOW_PLUGIN_ID.to_string()),
+            serde_json::json!({
+                "name": "HQ Now",
+                "tag": "hqnow",
+                "endpoint": HQNOW_ENDPOINT,
+                "metadataEndpoint": "https://comic-universe-plugin-hqnow.vercel.app/api/metadata",
+                "enabled": true,
+                "version": null,
+                "contentTypes": ["comic"],
+                "languageCodes": [],
+                "sources": [],
+                "installedFrom": "seed"
+            }),
+        )
+        .map_err(|e| e.to_string())?;
+
+    println!("[seed] inserted plugin:hqnow");
     Ok(())
 }
 

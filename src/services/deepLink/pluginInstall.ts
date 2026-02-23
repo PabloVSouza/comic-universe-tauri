@@ -58,6 +58,28 @@ const fetchPluginMetadata = async (
   }
 }
 
+const normalizeCapabilities = (
+  input: PluginMetadataResponse['capabilities'] | undefined
+): Array<'metadata' | 'content'> => {
+  if (Array.isArray(input)) {
+    const allowed = input.filter((entry): entry is 'metadata' | 'content' =>
+      entry === 'metadata' || entry === 'content'
+    )
+    if (allowed.length > 0) return Array.from(new Set(allowed))
+  }
+
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const metadata = input.metadata !== false
+    const content = input.content !== false
+    return [
+      ...(metadata ? (['metadata'] as const) : []),
+      ...(content ? (['content'] as const) : [])
+    ]
+  }
+
+  return ['metadata', 'content']
+}
+
 export const installPluginFromDeepLink = async (
   payload: PluginDeepLinkPayload
 ): Promise<{ name: string; endpoint: string }> => {
@@ -88,6 +110,7 @@ export const installPluginFromDeepLink = async (
       version: metadata?.version || null,
       contentTypes: metadata?.contentTypes || ['comic'],
       languageCodes: metadata?.languageCodes || [],
+      capabilities: normalizeCapabilities(metadata?.capabilities),
       sources: metadata?.sources || [],
       installedFrom: 'deep-link',
       installedAt: new Date().toISOString()

@@ -22,10 +22,16 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     baseHeaders.set('Accept', 'application/json')
   }
 
-  const response = await fetch(url, {
-    headers: baseHeaders,
-    ...init
-  })
+  let response: Response
+  try {
+    response = await fetch(url, {
+      headers: baseHeaders,
+      ...init
+    })
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`Website network error for ${url}: ${detail}`)
+  }
 
   const text = await response.text()
   if (!response.ok) {
@@ -41,7 +47,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
       }
     }
 
-    throw new Error(message)
+    throw new Error(`Website request failed for ${url}: ${message}`)
   }
 
   return JSON.parse(text) as T

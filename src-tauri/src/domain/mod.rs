@@ -26,6 +26,10 @@ pub enum Table {
     Plugins,
     Changelog,
     AppState,
+    Works,
+    CanonicalChapters,
+    ChapterVariants,
+    ChapterMappings,
 }
 
 impl Table {
@@ -37,6 +41,10 @@ impl Table {
             "plugins" => Ok(Self::Plugins),
             "changelog" => Ok(Self::Changelog),
             "app_state" => Ok(Self::AppState),
+            "works" => Ok(Self::Works),
+            "canonical_chapters" => Ok(Self::CanonicalChapters),
+            "chapter_variants" => Ok(Self::ChapterVariants),
+            "chapter_mappings" => Ok(Self::ChapterMappings),
             _ => Err(AppError::InvalidTable(input.to_string())),
         }
     }
@@ -49,6 +57,10 @@ impl Table {
             Self::Plugins => "plugins",
             Self::Changelog => "changelog",
             Self::AppState => "app_state",
+            Self::Works => "works",
+            Self::CanonicalChapters => "canonical_chapters",
+            Self::ChapterVariants => "chapter_variants",
+            Self::ChapterMappings => "chapter_mappings",
         }
     }
 }

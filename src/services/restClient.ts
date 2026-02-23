@@ -10,7 +10,11 @@ export type DbTable =
   | "read_progress"
   | "plugins"
   | "changelog"
-  | "app_state";
+  | "app_state"
+  | "works"
+  | "canonical_chapters"
+  | "chapter_variants"
+  | "chapter_mappings";
 
 export interface DbRecord<T = Record<string, unknown>> {
   id: string;

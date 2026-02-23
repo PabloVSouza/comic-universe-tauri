@@ -15,10 +15,10 @@ pub struct AppPaths {
 pub fn resolve_app_paths(_app: &tauri::App) -> Result<AppPaths, String> {
     let (base_root, mode) = if let Ok(dev_root) = std::env::var("CU_DEV_DATA_DIR") {
         (PathBuf::from(dev_root), "env:CU_DEV_DATA_DIR")
-    } else if cfg!(debug_assertions) {
-        (project_dev_data_dir(), "debug_assertions")
     } else if is_ios_simulator_runtime() {
         (project_dev_data_dir(), "ios_simulator_runtime")
+    } else if cfg!(debug_assertions) && !is_mobile_runtime() {
+        (project_dev_data_dir(), "debug_assertions_desktop")
     } else {
         (
             _app.path()
@@ -56,6 +56,10 @@ pub fn resolve_app_paths(_app: &tauri::App) -> Result<AppPaths, String> {
         .map_err(|e| format!("Unable to create wallpapers dir: {e}"))?;
 
     Ok(paths)
+}
+
+fn is_mobile_runtime() -> bool {
+    cfg!(target_os = "ios") || cfg!(target_os = "android")
 }
 
 fn project_dev_data_dir() -> PathBuf {

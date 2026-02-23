@@ -32,5 +32,9 @@ export function mapAuthErrorMessage(error: unknown, t: TFunction, fallbackKey: s
     return t('auth.common.errors.server')
   }
 
+  if (import.meta.env.DEV && rawMessage) {
+    return `${t(fallbackKey)} (${rawMessage})`
+  }
+
   return t(fallbackKey)
 }

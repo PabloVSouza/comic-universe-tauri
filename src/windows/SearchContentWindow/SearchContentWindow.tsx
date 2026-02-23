@@ -14,8 +14,9 @@ import {
 import { useDbListQuery, useListComicsQuery, restQueryKeys } from 'services'
 import {
   addSearchResultToDatabase,
-  listInstalledContentPlugins,
+  listInstalledPlugins,
   loadSearchResultDetails,
+  PluginSearchError,
   PluginRecordData,
   searchByPlugins,
   type SearchResultDetails,
@@ -36,6 +37,7 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
   const [selectedPluginIds, setSelectedPluginIds] = useState<string[]>([])
   const [results, setResults] = useState<SearchResultItem[]>([])
   const [isSearching, setIsSearching] = useState(false)
+  const [searchErrors, setSearchErrors] = useState<PluginSearchError[]>([])
   const [addingByResultId, setAddingByResultId] = useState<Record<string, boolean>>({})
   const [expandedResultId, setExpandedResultId] = useState<string | null>(null)
   const [detailsByResultId, setDetailsByResultId] = useState<Record<string, SearchResultDetails>>({})
@@ -46,7 +48,7 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
   const [visibleCount, setVisibleCount] = useState(20)
 
   const plugins = useMemo(
-    () => listInstalledContentPlugins(pluginsQuery.data ?? []).filter((plugin) => plugin.enabled),
+    () => listInstalledPlugins(pluginsQuery.data ?? []).filter((plugin) => plugin.enabled),
     [pluginsQuery.data]
   )
 
@@ -94,6 +96,7 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
   const handleSearch = async (searchValue: string) => {
     if (!searchValue.trim()) {
       setResults([])
+      setSearchErrors([])
       setExpandedResultId(null)
       setDetailsByResultId({})
       setLoadingDetailsByResultId({})
@@ -102,12 +105,14 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
 
     if (selectedPlugins.length === 0) {
       setResults([])
+      setSearchErrors([])
       return
     }
     setIsSearching(true)
     try {
-      const nextResults = await searchByPlugins(selectedPlugins, searchValue)
+      const { results: nextResults, errors } = await searchByPlugins(selectedPlugins, searchValue)
       setResults(nextResults)
+      setSearchErrors(errors)
       setExpandedResultId(null)
       setDetailsByResultId({})
       setLoadingDetailsByResultId({})
@@ -175,7 +180,7 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
   const handleAddComic = async (item: SearchResultItem) => {
     setAddingByResultId((current) => ({ ...current, [item.id]: true }))
     try {
-      await addSearchResultToDatabase(item)
+      await addSearchResultToDatabase(item, selectedPlugins)
       await queryClient.invalidateQueries({ queryKey: restQueryKeys.comics })
       await queryClient.invalidateQueries({ queryKey: ['rest', 'chapters'] })
     } finally {
@@ -230,6 +235,15 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
 
       <div ref={listScrollContainerRef} className="size-full overflow-y-auto bg-transparent pt-40 pb-4">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-px bg-transparent">
+          {searchErrors.length > 0 && (
+            <div className="bg-destructive/10 p-3 text-xs text-destructive">
+              {searchErrors.map((error) => (
+                <p key={`${error.pluginId}:${error.endpoint}`}>
+                  {error.pluginName}: {error.message}
+                </p>
+              ))}
+            </div>
+          )}
           {renderedResults.map((item) => {
             const alreadyAdded = existingComicSourceKeySet.has(`${item.pluginTag}:${item.siteId}`)
             return (

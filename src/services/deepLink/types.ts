@@ -18,6 +18,7 @@ export interface PluginMetadataResponse {
   version?: string
   contentTypes?: string[]
   languageCodes?: string[]
+  capabilities?: string[] | { metadata?: boolean; content?: boolean }
   sources?: PluginSourceMetadata[]
 }
 
