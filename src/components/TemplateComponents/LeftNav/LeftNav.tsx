@@ -6,9 +6,11 @@ import { ComponentProps, FC } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from 'utils'
 
-interface LeftNavProps extends ComponentProps<'div'> {}
+interface LeftNavProps extends ComponentProps<'div'> {
+  onNavigate?: () => void
+}
 
-export const LeftNav: FC<LeftNavProps> = ({ className, ...props }) => {
+export const LeftNav: FC<LeftNavProps> = ({ className, onNavigate, ...props }) => {
   const { t } = useTranslation()
   const openWindow = useOpenWindow()
 
@@ -21,7 +23,10 @@ export const LeftNav: FC<LeftNavProps> = ({ className, ...props }) => {
         type="button"
         variant="ghost"
         className="h-9 w-full justify-start gap-2 rounded-sm bg-background px-2 text-sm text-muted-foreground hover:bg-accent/50"
-        onClick={() => openWindow({ component: 'SearchContentWindow' })}
+        onClick={() => {
+          openWindow({ component: 'SearchContentWindow' })
+          onNavigate?.()
+        }}
       >
         <Search className="size-4" />
         {t('leftNav.library')}

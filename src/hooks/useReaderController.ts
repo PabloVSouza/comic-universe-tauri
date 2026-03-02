@@ -73,10 +73,35 @@ const AUTO_LANGUAGE_MODE = '__auto__'
 
 const normalizeLanguageCode = (value: string): string => value.trim().toLowerCase().replace(/_/g, '-')
 
-const preferredLanguageCodes = (): string[] => {
+const preferredAppLanguageCodes = (): string[] => {
   const resolved = normalizeLanguageCode(i18n.resolvedLanguage || i18n.language || 'en')
   const base = resolved.split('-')[0]
-  return Array.from(new Set([resolved, base, 'en']))
+  const all = [resolved, base]
+
+  if (base === 'pt') {
+    all.push(resolved === 'pt-pt' ? 'pt-br' : 'pt-pt')
+  }
+
+  return Array.from(new Set(all.filter(Boolean)))
+}
+
+const languagePreferenceScore = (language: string, preferred: string): number | null => {
+  const normalizedLanguage = normalizeLanguageCode(language)
+  const normalizedPreferred = normalizeLanguageCode(preferred)
+  if (!normalizedLanguage || !normalizedPreferred) return null
+
+  const languageBase = normalizedLanguage.split('-')[0]
+  const preferredBase = normalizedPreferred.split('-')[0]
+
+  if (normalizedLanguage === normalizedPreferred) return 0
+  if (languageBase === normalizedPreferred) return 1
+  if (normalizedLanguage === preferredBase) return 2
+  if (languageBase === preferredBase) return 3
+  return null
+}
+
+const preferredLanguageCodes = (): string[] => {
+  return Array.from(new Set([...preferredAppLanguageCodes(), 'en']))
 }
 
 const chapterLanguageModeFromSettings = (work?: { data?: WorkData } | null): string => {
@@ -589,9 +614,19 @@ export const useReaderController = () => {
       const candidatePlugins = [...installedContentPlugins].sort((a, b) => {
         const aLang = a.languageCodes.map(normalizeLanguageCode)
         const bLang = b.languageCodes.map(normalizeLanguageCode)
-        const aScore = preferredLanguages.some((lang) => aLang.includes(lang)) ? 1 : 0
-        const bScore = preferredLanguages.some((lang) => bLang.includes(lang)) ? 1 : 0
-        return bScore - aScore
+        const rankFor = (languages: string[]) =>
+          languages.reduce((best, language) => {
+            preferredLanguages.forEach((preferred, index) => {
+              const score = languagePreferenceScore(language, preferred)
+              if (score === null) return
+              best = Math.min(best, index * 10 + score)
+            })
+            return best
+          }, Number.MAX_SAFE_INTEGER)
+        const aRank = rankFor(aLang)
+        const bRank = rankFor(bLang)
+        if (aRank !== bRank) return aRank - bRank
+        return a.id.localeCompare(b.id)
       })
 
       for (const plugin of candidatePlugins) {
@@ -649,10 +684,12 @@ export const useReaderController = () => {
               .map(normalizeLanguageCode)
               .filter(Boolean)
             const langRank = chapterLanguages.reduce((best, lang) => {
-              const idx = preferredLanguages.findIndex(
-                (preferred) => preferred === lang || preferred === lang.split('-')[0]
-              )
-              return idx >= 0 ? Math.min(best, idx) : best
+              preferredLanguages.forEach((preferred, index) => {
+                const score = languagePreferenceScore(lang, preferred)
+                if (score === null) return
+                best = Math.min(best, index * 10 + score)
+              })
+              return best
             }, Number.MAX_SAFE_INTEGER)
             const nameScore = titleMatchScore(chapterName, typeof entry.name === 'string' ? entry.name : '')
             return { entry, langRank, nameScore }

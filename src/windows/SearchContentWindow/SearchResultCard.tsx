@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { logoIcon } from 'assets'
 import { Badge } from 'components/ui/badge'
 import { Button } from 'components/ui/button'
+import { useTranslation } from 'react-i18next'
 import { SearchResultDetails, SearchResultItem } from './pluginApi'
 
 interface SearchResultCardProps {
@@ -38,6 +39,7 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
   addedLabel,
   chaptersLabel
 }) => {
+  const { t } = useTranslation()
   const cover = details?.cover || item.cover || logoIcon
   const description = details?.description || item.description || '-'
   const chapterCount = details?.chapterCount ?? item.chapterCount
@@ -52,8 +54,10 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
       onClick={!isExpanded ? onToggle : undefined}
     >
       <div className="flex min-w-0 flex-1 flex-col items-start justify-center px-4 py-3 text-left sm:items-center sm:text-center">
-        <h3 className="w-full break-words text-xl leading-tight sm:truncate sm:text-2xl">{item.title}</h3>
-        <p className="mt-1 w-full text-xs text-muted-foreground sm:truncate">
+        <h3 className="w-full min-w-0 break-all text-xl leading-tight sm:truncate sm:text-2xl">
+          {item.title}
+        </h3>
+        <p className="mt-1 w-full min-w-0 break-all text-xs text-muted-foreground sm:truncate">
           {item.sourceName || item.pluginName}
         </p>
         <div className="mt-2 flex w-full flex-wrap items-center gap-1 sm:justify-center">
@@ -70,9 +74,11 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
         {isExpanded && (
           <>
             <div className="my-3 h-px w-full bg-border/60" />
-            <p className="max-h-48 w-full overflow-auto text-sm text-foreground/85 sm:max-h-none">
-              {isLoadingDetails ? 'Carregando...' : description}
-            </p>
+            <div className="max-h-48 w-full min-w-0 overflow-auto sm:max-h-none">
+              <p className="w-full min-w-0 whitespace-pre-wrap break-all text-sm text-foreground/85">
+                {isLoadingDetails ? t('searchContent.search.loadingDetails') : description}
+              </p>
+            </div>
             <div className="mt-3 w-full sm:w-auto">
               <Button
                 type="button"
@@ -97,7 +103,7 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
                       style={{ width: `${Math.max(4, Math.min(100, Math.round(addProgress ?? 0)))}%` }}
                     />
                   </div>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="min-w-0 whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
                     {addProgressMessage || addingLabel}
                   </p>
                 </div>
@@ -118,7 +124,9 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
         type="button"
         onClick={onToggle}
         className="absolute right-2 top-2 rounded-sm bg-background/70 p-1 hover:bg-background"
-        aria-label={isExpanded ? 'Collapse result' : 'Expand result'}
+        aria-label={
+          isExpanded ? t('searchContent.actions.collapseResult') : t('searchContent.actions.expandResult')
+        }
       >
         {isExpanded ? (
           <ChevronUp className="size-4 text-muted-foreground" />

@@ -1,5 +1,6 @@
 import { ComponentProps, FC, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import i18n from 'i18n'
 import { BgBox } from 'components'
 import {
@@ -32,10 +33,20 @@ const normalizeLanguageCode = (value: unknown): string => {
   return value.trim().toLowerCase().replace(/_/g, '-')
 }
 
-const preferredUiLanguageCodes = (): string[] => {
+const preferredAppLanguageCodes = (): string[] => {
   const resolved = normalizeLanguageCode(i18n.resolvedLanguage || i18n.language || 'en')
   const base = resolved.split('-')[0]
-  return Array.from(new Set([resolved, base].filter(Boolean)))
+  const all = [resolved, base]
+
+  if (base === 'pt') {
+    all.push(resolved === 'pt-pt' ? 'pt-br' : 'pt-pt')
+  }
+
+  return Array.from(new Set(all.filter(Boolean)))
+}
+
+const preferredUiLanguageCodes = (): string[] => {
+  return preferredAppLanguageCodes()
 }
 
 interface ReadProgressData {
@@ -67,6 +78,7 @@ export const MainContent: FC<MainContentProps> = ({
   selectedWorkId,
   ...props
 }) => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const worksQuery = useDbListQuery<WorkData>('works', 500, 0)
   const upsertWorkMutation = useDbUpsertMutation<WorkData>()
@@ -145,13 +157,15 @@ export const MainContent: FC<MainContentProps> = ({
     })
   }, [availableChapterLanguages, selectedWork, selectedWorkId])
 
-  useEffect(() => {
+  const handleSelectChapterLanguage = (nextLanguage: string) => {
+    setSelectedChapterLanguage(nextLanguage)
+
     if (!selectedWork) return
 
     const savedMode = chapterLanguageModeFromSettings(selectedWork)
     const nextMode =
-      selectedChapterLanguage && selectedChapterLanguage !== AUTO_LANGUAGE_MODE
-        ? normalizeLanguageCode(selectedChapterLanguage)
+      nextLanguage && nextLanguage !== AUTO_LANGUAGE_MODE
+        ? normalizeLanguageCode(nextLanguage)
         : AUTO_LANGUAGE_MODE
 
     if (savedMode === nextMode) return
@@ -171,7 +185,7 @@ export const MainContent: FC<MainContentProps> = ({
       .then(() => {
         void worksQuery.refetch()
       })
-  }, [selectedChapterLanguage, selectedWork, upsertWorkMutation, worksQuery.refetch])
+  }
 
   const chapterLanguagePriority = useMemo(() => {
     if (selectedChapterLanguage !== AUTO_LANGUAGE_MODE) {
@@ -225,13 +239,13 @@ export const MainContent: FC<MainContentProps> = ({
         data: {
           canonicalChapterId: `placeholder:${selectedWorkId}:${number}`,
           number,
-          name: `Chapter ${number}`,
+          name: t('common.chapterLabel', { number }),
           pages: [],
           isPlaceholder: true
         }
       }
     })
-  }, [chapterCountHint, chapterVariantsQuery.data?.length, chapters, selectedWorkId])
+  }, [chapterCountHint, chapterVariantsQuery.data?.length, chapters, selectedWorkId, t])
   const deferredChapters = useDeferredValue(chaptersWithFallback)
   const hasSelectedChapters = selectedChapterIds.size > 0
 
@@ -285,7 +299,7 @@ export const MainContent: FC<MainContentProps> = ({
     return (
       <BgBox className={cn('relative min-h-0 overflow-auto p-4', className)} {...props}>
         <div className="rounded-md border border-border/50 bg-background p-3 text-sm text-muted-foreground">
-          Select a comic to view details and chapters.
+          {t('mainContent.emptySelection')}
         </div>
       </BgBox>
     )
@@ -294,7 +308,7 @@ export const MainContent: FC<MainContentProps> = ({
   const workData = (selectedWork?.data ?? {}) as WorkData
   const title = normalizeText(workData.title) || normalizeText(workData.name) || selectedWorkId
   const publisher = normalizeText(workData.publisher)
-  const status = normalizeText(workData.status) || 'Unknown'
+  const status = normalizeText(workData.status) || t('mainContent.unknownStatus')
   const synopsis = normalizeText(workData.description) || normalizeText(workData.synopsis)
   const coverUrl = normalizeText(workData.cover)
   const showSelectionMode = isSelectionMode || hasSelectedChapters
@@ -317,7 +331,7 @@ export const MainContent: FC<MainContentProps> = ({
           availableChapterLanguages={availableChapterLanguages}
           selectedChapterLanguage={selectedChapterLanguage}
           autoLanguageMode={AUTO_LANGUAGE_MODE}
-          onSelectChapterLanguage={setSelectedChapterLanguage}
+          onSelectChapterLanguage={handleSelectChapterLanguage}
           isSelectionMode={showSelectionMode}
           onToggleSelectionMode={() => {
             if (showSelectionMode) {

@@ -1,7 +1,7 @@
 import { FC, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
-import { Search } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { Input } from 'components/ui/input'
 import { Button } from 'components/ui/button'
 import { LoadingOverlay } from 'components'
@@ -25,9 +25,11 @@ import {
 } from './pluginApi'
 import { SearchResultCard } from './SearchResultCard'
 
-export type SearchContentWindowProps = Record<string, unknown>
+export interface SearchContentWindowProps extends Record<string, unknown> {
+  closeSelf?: () => void
+}
 
-export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
+export const SearchContentWindow: FC<SearchContentWindowProps> = ({ closeSelf }) => {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
 
@@ -184,10 +186,22 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
   const hasResultBlocks = searchErrors.length > 0 || results.length > 0
 
   return (
-    <div className="relative size-full min-h-0 overflow-hidden bg-transparent p-px">
+    <div className="relative min-h-full bg-background pt-[var(--cu-safe-top,0px)] md:pt-0">
       <LoadingOverlay isLoading={isSearching} message={t('searchContent.search.searching')} />
-      <div className="grid size-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-        <div className="sticky top-0 z-20 grid gap-px bg-transparent px-3 pt-14 sm:px-6 sm:pt-12">
+      <div className="grid min-h-full grid-rows-[auto_minmax(0,1fr)]">
+        <div className="sticky top-0 z-20 grid gap-px bg-background/72 px-3 pt-4 supports-backdrop-filter:backdrop-blur-xl sm:px-6 sm:pt-4">
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="destructive"
+              size="icon-sm"
+              className="h-8 w-8 rounded-full"
+              onClick={() => closeSelf?.()}
+              aria-label={t('searchContent.actions.close')}
+            >
+              <X className="size-4" />
+            </Button>
+          </div>
           <div className="grid h-12 grid-cols-[minmax(0,1fr)_3rem] overflow-hidden bg-background/90 shadow-sm supports-backdrop-filter:backdrop-blur-sm sm:h-14">
             <Input
               value={query}
@@ -228,9 +242,9 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = () => {
             </div>
           </div>
         </div>
-        <div className="min-h-0 overflow-auto bg-transparent px-3 pb-3 pt-1 sm:px-6 sm:pb-4">
+        <div className="min-h-0 bg-background px-3 pb-3 pt-1 sm:px-6 sm:pb-4">
           <div
-            className={`mx-auto flex w-full max-w-5xl flex-col bg-transparent ${
+            className={`mx-auto flex w-full max-w-5xl flex-col bg-background ${
               hasResultBlocks ? 'gap-3 sm:gap-px' : 'min-h-full justify-center gap-3'
             }`}
           >

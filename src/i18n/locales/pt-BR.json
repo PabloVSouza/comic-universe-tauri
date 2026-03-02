@@ -2,7 +2,38 @@
   "app": {
     "connectingBackend": "Conectando ao backend local..."
   },
+  "home": {
+    "closeComicList": "Fechar lista de quadrinhos"
+  },
+  "library": {
+    "empty": "Nenhum quadrinho disponível.",
+    "remove": {
+      "confirmTitle": "Remover quadrinho",
+      "confirmDescription": "Remover \"{{title}}\" do banco de dados local.",
+      "buttonLabel": "Remover {{title}}",
+      "cancel": "Cancelar",
+      "confirmAction": "Remover",
+      "removing": "Removendo..."
+    }
+  },
+  "common": {
+    "chapterLabel": "Capítulo {{number}}"
+  },
+  "deepLink": {
+    "pluginAdded": {
+      "title": "Plugin adicionado",
+      "description": "{{name}} foi instalado por deep link."
+    },
+    "comicAdded": {
+      "title": "Novo quadrinho adicionado",
+      "description": "{{comicName}} importado com {{chaptersImported}} capítulos.",
+      "descriptionWithSkipped": "{{comicName}} importado com {{chaptersImported}} capítulos ({{chaptersSkipped}} ignorados sem páginas)."
+    },
+    "unknownImportError": "Erro desconhecido ao importar por deep link.",
+    "importFailed": "Falha na importação"
+  },
   "topbar": {
+    "openList": "Abrir lista",
     "menu": {
       "title": "Menu",
       "openMenu": "Abrir menu",
@@ -84,6 +115,8 @@
     }
   },
   "mainContent": {
+    "emptySelection": "Selecione um quadrinho para ver detalhes e capítulos.",
+    "unknownStatus": "Desconhecido",
     "nav": {
       "languages": {
         "auto": "Automático",
@@ -151,7 +184,8 @@
     "search": {
       "placeholder": "Buscar quadrinhos, mangás ou títulos...",
       "search": "Buscar",
-      "searching": "Buscando..."
+      "searching": "Buscando...",
+      "loadingDetails": "Carregando..."
     },
     "labels": {
       "chapters": "Capítulos"
@@ -159,7 +193,9 @@
     "actions": {
       "add": "Adicionar ao banco",
       "adding": "Adicionando...",
-      "added": "Adicionado"
+      "added": "Adicionado",
+      "expandResult": "Expandir resultado",
+      "collapseResult": "Recolher resultado"
     },
     "progress": {
       "loadingDetails": "Carregando detalhes",
@@ -170,6 +206,9 @@
       "savingComic": "Salvando quadrinho",
       "savingReadableChapters": "Salvando capítulos legíveis",
       "done": "Concluído"
+    },
+    "errors": {
+      "unknownPlugin": "Erro desconhecido no plugin"
     },
     "empty": "Nenhum resultado disponível."
   },

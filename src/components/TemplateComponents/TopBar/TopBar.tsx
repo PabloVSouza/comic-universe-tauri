@@ -6,9 +6,11 @@ import { cn } from 'utils'
 import { logoIcon } from 'assets'
 import { PanelLeftOpen } from 'lucide-react'
 import { useAppStore } from 'stores'
+import { useTranslation } from 'react-i18next'
 import { AppMenuSheet } from './index'
 
 export const TopBar: FC<ComponentProps<'div'>> = ({ className, ...props }) => {
+  const { t } = useTranslation()
   const setMobileListOpen = useAppStore((state) => state.setMobileListOpen)
   const { onOpenMobileList: _legacyOnOpenMobileList, ...domProps } = props as ComponentProps<'div'> & {
     onOpenMobileList?: unknown
@@ -27,7 +29,10 @@ export const TopBar: FC<ComponentProps<'div'>> = ({ className, ...props }) => {
   return (
     <BgBox
       onMouseDown={handleWindowDrag}
-      className={cn('relative flex h-14 items-center px-3 select-none', className)}
+      className={cn(
+        'relative isolate flex h-[calc(3.5rem+var(--cu-safe-top,0px))] items-center px-3 pt-[var(--cu-safe-top,0px)] select-none',
+        className
+      )}
       {...domProps}
     >
       <div data-tauri-drag-region className="absolute inset-0" />
@@ -37,8 +42,8 @@ export const TopBar: FC<ComponentProps<'div'>> = ({ className, ...props }) => {
         type="button"
         variant="ghost"
         size="icon-sm"
-        className="absolute left-3 z-30 md:hidden hover:bg-white/10"
-        aria-label="Open list"
+        className="absolute left-3 top-1/2 z-30 -translate-y-1/2 md:hidden hover:bg-white/10"
+        aria-label={t('topbar.openList')}
         data-no-window-drag
         onClick={() => setMobileListOpen(true)}
       >

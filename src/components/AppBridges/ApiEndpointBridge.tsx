@@ -2,6 +2,7 @@ import { FC, useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { isTauri } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
+import { useTranslation } from 'react-i18next'
 import { processDeepLinkUrl } from 'services/deepLink'
 import { accountSessionQueryKey, restQueryKeys, setApiBaseUrl } from 'services'
 
@@ -14,6 +15,7 @@ interface ApiEndpointPayload {
 const DEEP_LINK_EVENT = 'deep-link://urls'
 
 export const ApiEndpointBridge: FC = () => {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -52,8 +54,8 @@ export const ApiEndpointBridge: FC = () => {
 
               if (result.kind === 'plugin') {
                 await queryClient.invalidateQueries({ queryKey: ['rest', 'db', 'list', 'plugins'] })
-                toast.success('Plugin added', {
-                  description: `${result.name} was installed from deep link.`
+                toast.success(t('deepLink.pluginAdded.title'), {
+                  description: t('deepLink.pluginAdded.description', { name: result.name })
                 })
                 continue
               }
@@ -63,20 +65,28 @@ export const ApiEndpointBridge: FC = () => {
                 queryClient.invalidateQueries({ queryKey: ['rest', 'chapters'] })
               ])
 
-              toast.success('New comic added', {
-                description: `${result.result.comicName} imported with ${result.result.chaptersImported} chapters${
-                  result.result.chaptersSkipped > 0
-                    ? ` (${result.result.chaptersSkipped} skipped without pages)`
-                    : ''
-                }.`
+              const description =
+                result.result.chaptersSkipped > 0
+                  ? t('deepLink.comicAdded.descriptionWithSkipped', {
+                      comicName: result.result.comicName,
+                      chaptersImported: result.result.chaptersImported,
+                      chaptersSkipped: result.result.chaptersSkipped
+                    })
+                  : t('deepLink.comicAdded.description', {
+                      comicName: result.result.comicName,
+                      chaptersImported: result.result.chaptersImported
+                    })
+
+              toast.success(t('deepLink.comicAdded.title'), {
+                description
               })
             } catch (error) {
               const message =
                 error instanceof Error && error.message.trim().length > 0
                   ? error.message
-                  : 'Unknown deep-link import error.'
+                  : t('deepLink.unknownImportError')
               console.error('[comic-universe] failed to process deep-link', error)
-              toast.error('Import failed', { description: message })
+              toast.error(t('deepLink.importFailed'), { description: message })
             }
           }
         }
@@ -132,7 +142,7 @@ export const ApiEndpointBridge: FC = () => {
       unlistenDeepLinkFallback?.()
       removeDevDeepLinkListener?.()
     }
-  }, [queryClient])
+  }, [queryClient, t])
 
   return null
 }

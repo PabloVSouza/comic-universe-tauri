@@ -1,8 +1,34 @@
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, '');
 
-let runtimeApiBaseUrl = normalizeBaseUrl(
+const API_BASE_URL_STORAGE_KEY = "comic-universe:api-base-url";
+
+const defaultApiBaseUrl = normalizeBaseUrl(
   import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8787/api",
 );
+
+const readPersistedApiBaseUrl = (): string => {
+  if (typeof window === "undefined") return defaultApiBaseUrl;
+
+  const globalValue = (window as Window & { __CU_API_BASE_URL__?: string }).__CU_API_BASE_URL__;
+  if (typeof globalValue === "string" && globalValue.trim()) {
+    return normalizeBaseUrl(globalValue);
+  }
+
+  const storedValue = window.localStorage.getItem(API_BASE_URL_STORAGE_KEY);
+  if (typeof storedValue === "string" && storedValue.trim()) {
+    return normalizeBaseUrl(storedValue);
+  }
+
+  return defaultApiBaseUrl;
+};
+
+const persistApiBaseUrl = (value: string): void => {
+  if (typeof window === "undefined") return;
+  (window as Window & { __CU_API_BASE_URL__?: string }).__CU_API_BASE_URL__ = value;
+  window.localStorage.setItem(API_BASE_URL_STORAGE_KEY, value);
+};
+
+let runtimeApiBaseUrl = readPersistedApiBaseUrl();
 
 export type DbTable =
   | "comics"
@@ -70,13 +96,27 @@ export interface ChapterData {
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 4000);
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+      signal: init?.signal ?? controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("REST request timed out");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 
   const text = await response.text();
   if (!response.ok) {
@@ -189,6 +229,7 @@ export function getComicCoverUrl(comicId: string): string {
 
 export function setApiBaseUrl(value: string): void {
   runtimeApiBaseUrl = normalizeBaseUrl(value);
+  persistApiBaseUrl(runtimeApiBaseUrl);
 }
 
 export function getApiBaseUrl(): string {

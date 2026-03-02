@@ -291,7 +291,7 @@ export const Home: FC = () => {
 
   return (
     <>
-      <div className="grid size-full grid-cols-1 grid-rows-[3.5rem_minmax(0,1fr)] gap-px md:grid-cols-[15rem_minmax(0,1fr)] md:grid-rows-[3.5rem_3.5rem_minmax(0,1fr)]">
+      <div className="grid size-full grid-cols-1 grid-rows-[calc(3.5rem+var(--cu-safe-top,0px))_minmax(0,1fr)] gap-px md:grid-cols-[15rem_minmax(0,1fr)] md:grid-rows-[calc(3.5rem+var(--cu-safe-top,0px))_3.5rem_minmax(0,1fr)]">
         <TopBar className="col-start-1 row-start-1 md:col-span-2" />
         <LeftNav
           className="hidden md:flex md:col-start-1 md:row-start-2"
@@ -308,13 +308,13 @@ export const Home: FC = () => {
       </div>
 
       <div
-        className={`fixed inset-0 z-50 transition-[visibility] duration-0 md:hidden ${
+        className={`fixed inset-0 z-40 transition-[visibility] duration-0 md:hidden ${
           isMobileListOpen || isMobileListVisible ? 'visible pointer-events-auto' : 'invisible pointer-events-none'
         }`}
       >
         <button
           type="button"
-          aria-label="Close comic list"
+          aria-label={t('home.closeComicList')}
           className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${
             isMobileListOpen ? 'opacity-100' : 'opacity-0'
           }`}
@@ -322,12 +322,15 @@ export const Home: FC = () => {
         />
 
         <aside
-          className={`relative h-full w-[85vw] max-w-[20rem] border-r border-border/50 bg-background transition-transform duration-200 ease-out will-change-transform ${
+          className={`relative h-full w-[85vw] max-w-[20rem] border-r border-border/50 bg-background pt-[var(--cu-safe-top,0px)] transition-transform duration-200 ease-out will-change-transform ${
             isMobileListOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
           <div className="grid h-full grid-rows-[3.5rem_minmax(0,1fr)] gap-px">
-            <LeftNav className="row-start-1" />
+            <LeftNav
+              className="row-start-1"
+              onNavigate={() => setMobileListOpen(false)}
+            />
             <LeftList
               className="row-start-2 min-h-0"
               selectedWorkId={selectedWorkId}

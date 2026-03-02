@@ -15,8 +15,14 @@ import { Toaster } from 'components/ui'
 
 if (isTauri()) {
   document.documentElement.classList.add('tauri-runtime')
+  if (/Android/i.test(globalThis.navigator?.userAgent || '')) {
+    document.documentElement.classList.add('android-runtime')
+  } else {
+    document.documentElement.classList.remove('android-runtime')
+  }
 } else {
   document.documentElement.classList.remove('tauri-runtime')
+  document.documentElement.classList.remove('android-runtime')
 }
 
 const queryClient = new QueryClient({

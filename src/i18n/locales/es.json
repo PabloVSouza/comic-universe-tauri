@@ -1,0 +1,218 @@
+{
+  "app": {
+    "connectingBackend": "Conectando al backend local..."
+  },
+  "home": {
+    "closeComicList": "Cerrar lista de cómics"
+  },
+  "library": {
+    "empty": "No hay cómics disponibles.",
+    "remove": {
+      "confirmTitle": "Eliminar cómic",
+      "confirmDescription": "Eliminar \"{{title}}\" de la base de datos local.",
+      "buttonLabel": "Eliminar {{title}}",
+      "cancel": "Cancelar",
+      "confirmAction": "Eliminar",
+      "removing": "Eliminando..."
+    }
+  },
+  "common": {
+    "chapterLabel": "Capítulo {{number}}"
+  },
+  "deepLink": {
+    "pluginAdded": {
+      "title": "Plugin agregado",
+      "description": "{{name}} se instaló mediante deep link."
+    },
+    "comicAdded": {
+      "title": "Nuevo cómic agregado",
+      "description": "{{comicName}} importado con {{chaptersImported}} capítulos.",
+      "descriptionWithSkipped": "{{comicName}} importado con {{chaptersImported}} capítulos ({{chaptersSkipped}} omitidos sin páginas)."
+    },
+    "unknownImportError": "Error desconocido al importar por deep link.",
+    "importFailed": "Error de importación"
+  },
+  "topbar": {
+    "openList": "Abrir lista",
+    "menu": {
+      "title": "Menú",
+      "openMenu": "Abrir menú",
+      "aboutApp": "Acerca de esta app",
+      "settings": "Configuración",
+      "userSettings": "Configuración de usuario",
+      "plugins": "Plugins",
+      "closeApp": "Cerrar app",
+      "user": {
+        "guest": "Invitado",
+        "notSignedIn": "No autenticado"
+      }
+    }
+  },
+  "auth": {
+    "common": {
+      "errors": {
+        "network": "No se pudo conectar. Revisa tu internet e inténtalo de nuevo.",
+        "validation": "Datos inválidos. Revisa los campos e inténtalo de nuevo.",
+        "server": "Error interno del servidor. Inténtalo de nuevo en un momento."
+      }
+    },
+    "login": {
+      "title": "Iniciar sesión",
+      "subtitle": "Comic Universe",
+      "description": "Inicia sesión con tu cuenta del sitio web Comic Universe para continuar.",
+      "fields": {
+        "email": "Correo",
+        "password": "Contraseña"
+      },
+      "placeholders": {
+        "email": "tu@email.com",
+        "password": "********"
+      },
+      "actions": {
+        "createAccount": "Crear cuenta",
+        "continue": "Continuar",
+        "signingIn": "Iniciando sesión..."
+      },
+      "errors": {
+        "required": "El correo y la contraseña son obligatorios.",
+        "invalidCredentials": "Correo o contraseña inválidos.",
+        "failed": "No se pudo iniciar sesión."
+      }
+    },
+    "register": {
+      "title": "Registro",
+      "subtitle": "Comic Universe",
+      "description": "Crea una nueva cuenta en el sitio web Comic Universe.",
+      "fields": {
+        "email": "Correo",
+        "username": "Usuario",
+        "displayName": "Nombre visible",
+        "password": "Contraseña",
+        "confirmPassword": "Confirmar contraseña"
+      },
+      "placeholders": {
+        "email": "tu@email.com",
+        "username": "usuario",
+        "displayName": "Tu nombre",
+        "password": "********",
+        "confirmPassword": "********"
+      },
+      "actions": {
+        "backToSignIn": "Volver a iniciar sesión",
+        "createAccount": "Crear cuenta",
+        "creating": "Creando..."
+      },
+      "feedback": {
+        "success": "Cuenta creada correctamente."
+      },
+      "errors": {
+        "required": "Todos los campos son obligatorios.",
+        "passwordMismatch": "Las contraseñas no coinciden.",
+        "emailTaken": "Este correo ya está en uso.",
+        "usernameTaken": "Este nombre de usuario ya está en uso.",
+        "failed": "No se pudo crear la cuenta."
+      }
+    }
+  },
+  "mainContent": {
+    "emptySelection": "Selecciona un cómic para ver detalles y capítulos.",
+    "unknownStatus": "Desconocido",
+    "nav": {
+      "languages": {
+        "auto": "Automático",
+        "none": "Idioma",
+        "select": "Idioma de los capítulos"
+      },
+      "actions": {
+        "download": "Descargar"
+      }
+    },
+    "chapterTable": {
+      "headers": {
+        "chapter": "Cap.",
+        "name": "Nombre",
+        "progress": "Progreso",
+        "read": "Leído"
+      },
+      "actions": {
+        "selectAllChapters": "Seleccionar todos los capítulos",
+        "unselectAllChapters": "Deseleccionar todos los capítulos",
+        "selectAll": "Seleccionar todo",
+        "unselectAll": "Deseleccionar todo",
+        "selectChapter": "Seleccionar capítulo",
+        "unselectChapter": "Deseleccionar capítulo",
+        "markRead": "Marcar como leído",
+        "markUnread": "Marcar como no leído"
+      },
+      "bulk": {
+        "selectedCount_one": "{{count}} seleccionado",
+        "selectedCount_other": "{{count}} seleccionados",
+        "clear": "Limpiar",
+        "markRead": "Marcar leído",
+        "markUnread": "Marcar no leído"
+      },
+      "mobile": {
+        "selectChapters": "Seleccionar",
+        "doneSelection": "Listo"
+      },
+      "empty": "No se encontraron capítulos."
+    }
+  },
+  "mainContent.nav.actions.read": "Seguir leyendo",
+  "reader": {
+    "back": "Volver",
+    "close": "Cerrar lector",
+    "settings": "Configuración de lectura",
+    "verticalReading": "Lectura vertical",
+    "rightToLeft": "Lectura de derecha a izquierda",
+    "doublePageSpread": "Doble página",
+    "previousChapter": "Capítulo anterior",
+    "nextChapter": "Siguiente capítulo",
+    "previousPage": "Página anterior",
+    "nextPage": "Siguiente página",
+    "loadingPages": "Cargando páginas...",
+    "failedToLoadPages": "No se pudieron cargar las páginas del capítulo.",
+    "noPages": "No hay páginas disponibles para este capítulo.",
+    "externalChapter": "Este capítulo solo está disponible externamente.",
+    "openExternalChapter": "Abrir capítulo externo"
+  },
+  "searchContent": {
+    "plugins": {
+      "title": "Plugins",
+      "subtitle": "Selecciona las fuentes para buscar"
+    },
+    "search": {
+      "placeholder": "Buscar cómics, manga o títulos...",
+      "search": "Buscar",
+      "searching": "Buscando...",
+      "loadingDetails": "Cargando..."
+    },
+    "labels": {
+      "chapters": "Capítulos"
+    },
+    "actions": {
+      "add": "Agregar a la base de datos",
+      "adding": "Agregando...",
+      "added": "Agregado",
+      "expandResult": "Expandir resultado",
+      "collapseResult": "Contraer resultado"
+    },
+    "progress": {
+      "loadingDetails": "Cargando detalles",
+      "loadingChapterList": "Cargando lista de capítulos",
+      "savingWork": "Guardando obra",
+      "savingChapterIndex": "Guardando índice de capítulos",
+      "loadingContentSources": "Cargando fuentes de contenido",
+      "savingComic": "Guardando cómic",
+      "savingReadableChapters": "Guardando capítulos legibles",
+      "done": "Listo"
+    },
+    "errors": {
+      "unknownPlugin": "Error desconocido del plugin"
+    },
+    "empty": "No hay resultados disponibles."
+  },
+  "leftNav": {
+    "library": "Biblioteca"
+  }
+}

@@ -103,6 +103,18 @@ const normalizeLanguageCode = (value: string): string =>
     .toLowerCase()
     .replace('_', '-')
 
+const preferredAppLanguageCodes = (): string[] => {
+  const primary = normalizeLanguageCode(i18n.resolvedLanguage || i18n.language || 'en')
+  const base = primary.split('-')[0]
+  const all = [primary, base]
+
+  if (base === 'pt') {
+    all.push(primary === 'pt-pt' ? 'pt-br' : 'pt-pt')
+  }
+
+  return Array.from(new Set(all.filter(Boolean)))
+}
+
 const normalizeToken = (value: string): string =>
   value
     .toLowerCase()
@@ -238,12 +250,8 @@ const postPlugin = async <T>(
 }
 
 const resolvePreferredLanguageCodes = (plugin?: InstalledPlugin): string[] => {
-  const primary = i18n.resolvedLanguage || i18n.language || 'en'
-  const normalizedPrimary = normalizeLanguageCode(primary || 'en')
-  const basePrimary = normalizedPrimary.split('-')[0]
-
   const pluginLanguages = (plugin?.languageCodes || []).map(normalizeLanguageCode)
-  const all = [normalizedPrimary, basePrimary, ...pluginLanguages].filter(Boolean)
+  const all = [...preferredAppLanguageCodes(), ...pluginLanguages].filter(Boolean)
 
   return Array.from(new Set(all))
 }
@@ -381,11 +389,12 @@ const normalizeChapters = async (
             preferredChapterTitle(chapter.name).length > preferredChapterTitle(current.name).length)))
 
     if (!shouldReplace) {
-      current.languageCodes = Array.from(new Set([...current.languageCodes, ...chapter.languageCodes]))
       continue
     }
 
-    chapter.languageCodes = Array.from(new Set([...current.languageCodes, ...chapter.languageCodes]))
+    if (chapter.languageCodes.length === 0) {
+      chapter.languageCodes = current.languageCodes
+    }
     consolidatedByNumber.set(chapterKey, chapter)
   }
 
@@ -550,9 +559,7 @@ const searchMatchScore = (query: string, title: string): number => {
 }
 
 const normalizedAppLanguageCodes = (): string[] => {
-  const primary = normalizeLanguageCode(i18n.resolvedLanguage || i18n.language || 'en')
-  const base = primary.split('-')[0]
-  return Array.from(new Set([primary, base].filter(Boolean)))
+  return preferredAppLanguageCodes()
 }
 
 const languageMatchesApp = (languages: string[]): boolean => {
@@ -675,7 +682,7 @@ export const searchByPlugins = async (
           error: null as PluginSearchError | null
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown plugin error'
+        const message = error instanceof Error ? error.message : i18n.t('searchContent.errors.unknownPlugin')
         return {
           results: [],
           error: {
@@ -914,7 +921,7 @@ export const addSearchResultToDatabase = async (
       const number = String(index + 1)
       return {
         number,
-        name: `Chapter ${number}`,
+        name: i18n.t('common.chapterLabel', { number }),
         languageCodes: result.languages.length ? result.languages : ['unknown'],
         raw: { generated: true, source: 'chapterCount' }
       }
@@ -933,7 +940,7 @@ export const addSearchResultToDatabase = async (
     const chapterData: Record<string, unknown> = {
       workId,
       number: chapterNumber,
-      name: chapter.name || `Chapter ${chapterNumber}`,
+      name: chapter.name || i18n.t('common.chapterLabel', { number: chapterNumber }),
       siteId: chapter.siteId || null,
       siteLink: chapter.siteLink || null,
       languageCodes: chapter.languageCodes,
@@ -996,14 +1003,41 @@ export const addSearchResultToDatabase = async (
         siteId: chapter.siteId || null,
         siteLink: chapter.siteLink || null,
         number: chapterNumber,
-        name: chapter.name || `Chapter ${chapterNumber}`,
+        name: chapter.name || i18n.t('common.chapterLabel', { number: chapterNumber }),
+        language: pickString(chapter.raw, ['language', 'lang']) || null,
         pages: chapter.pages,
         languageCodes: chapter.languageCodes,
         raw: chapter.raw
       }
       await dbUpsert('chapter_variants', variantData, variantChapterId)
 
-      const mappedCanonical = canonicalByNumber.get(normalizeChapterNumber(chapterNumber))
+      const chapterNumberKey = normalizeChapterNumber(chapterNumber)
+      let mappedCanonical = canonicalByNumber.get(chapterNumberKey)
+      if (!mappedCanonical) {
+        const canonicalChapterId = stableId('canonical-chapter', workId, chapterNumber)
+        const canonicalChapterData: Record<string, unknown> = {
+          workId,
+          number: chapterNumber,
+          name: chapter.name || i18n.t('common.chapterLabel', { number: chapterNumber }),
+          siteId: null,
+          siteLink: null,
+          languageCodes: chapter.languageCodes,
+          sourcePluginId: result.pluginId,
+          sourcePluginTag: result.pluginTag,
+          raw: {
+            ...(chapter.raw || {}),
+            generatedFromContent: true
+          }
+        }
+        await dbUpsert('canonical_chapters', canonicalChapterData, canonicalChapterId)
+        mappedCanonical = {
+          id: canonicalChapterId,
+          number: chapterNumber,
+          name: canonicalChapterData.name as string
+        }
+        canonicalByNumber.set(chapterNumberKey, mappedCanonical)
+      }
+
       if (mappedCanonical) {
         const mappingId = stableId('chapter-mapping', mappedCanonical.id, variantChapterId)
         await dbUpsert(

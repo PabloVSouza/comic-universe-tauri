@@ -40,6 +40,16 @@ const getChapterLanguage = (chapter: ResolvedChapterRecord): string => {
   const direct = chapter.data.language
   if (typeof direct === 'string' && direct.trim().length) return direct.trim().toUpperCase()
 
+  const rawRecord =
+    chapter.data.raw && typeof chapter.data.raw === 'object'
+      ? (chapter.data.raw as Record<string, unknown>)
+      : null
+  const rawDirect =
+    (typeof rawRecord?.language === 'string' && rawRecord.language.trim()) ||
+    (typeof rawRecord?.lang === 'string' && rawRecord.lang.trim()) ||
+    ''
+  if (rawDirect) return rawDirect.toUpperCase()
+
   const fromArray = Array.isArray(chapter.data.languageCodes)
     ? chapter.data.languageCodes.find((entry) => typeof entry === 'string' && entry.trim().length)
     : null

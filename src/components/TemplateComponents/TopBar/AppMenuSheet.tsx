@@ -34,7 +34,7 @@ export const AppMenuSheet: FC = () => {
   const menuItems = createMenuItems(() => void handleCloseApp())
 
   return (
-    <div data-no-window-drag className="absolute right-3 z-30">
+    <div data-no-window-drag className="absolute right-3 top-1/2 z-10 -translate-y-1/2">
       <Sheet>
         <SheetTrigger asChild>
           <button
@@ -54,7 +54,7 @@ export const AppMenuSheet: FC = () => {
         <SheetContent
           side="right"
           showCloseButton={false}
-          className="w-[252px] gap-px border-l border-border/60 bg-background/95 p-0 shadow-2xl shadow-black/40 supports-[backdrop-filter]:bg-background/82 supports-[backdrop-filter]:backdrop-blur-xl"
+          className="w-[252px] gap-px border-l border-border/60 bg-background/95 p-0 pt-[var(--cu-safe-top,0px)] shadow-2xl shadow-black/40 md:pt-0 supports-[backdrop-filter]:bg-background/82 supports-[backdrop-filter]:backdrop-blur-xl"
         >
           <AppMenuHeader
             profileName={profileName}

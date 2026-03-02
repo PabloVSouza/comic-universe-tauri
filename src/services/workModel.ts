@@ -84,7 +84,50 @@ const normalizeLanguageCode = (raw: unknown): string => {
   return raw.trim().toLowerCase().replace(/_/g, '-')
 }
 
+const languagePreferenceScore = (language: string, preferred: string): number | null => {
+  const normalizedLanguage = normalizeLanguageCode(language)
+  const normalizedPreferred = normalizeLanguageCode(preferred)
+  if (!normalizedLanguage || !normalizedPreferred) return null
+
+  const languageBase = normalizedLanguage.split('-')[0]
+  const preferredBase = normalizedPreferred.split('-')[0]
+
+  if (normalizedLanguage === normalizedPreferred) return 0
+  if (languageBase === normalizedPreferred) return 1
+  if (normalizedLanguage === preferredBase) return 2
+  if (languageBase === preferredBase) return 3
+  return null
+}
+
 const variantLanguageCodes = (variant: DbRecord<ChapterVariantData>): string[] => {
+  const rawRecord =
+    variant.data.raw && typeof variant.data.raw === 'object'
+      ? (variant.data.raw as Record<string, unknown>)
+      : null
+  const explicitRaw = rawRecord
+    ? [rawRecord.language, rawRecord.lang].map((entry) => normalizeLanguageCode(entry)).filter(Boolean)
+    : []
+  if (explicitRaw.length > 0) {
+    return Array.from(new Set(explicitRaw))
+  }
+
+  const explicitStored = [variant.data.language].map((entry) => normalizeLanguageCode(entry)).filter(Boolean)
+  if (explicitStored.length > 0) {
+    return Array.from(new Set(explicitStored))
+  }
+
+  const fromRawArray = rawRecord
+    ? [
+        ...(Array.isArray(rawRecord.languageCodes) ? rawRecord.languageCodes : []),
+        ...(Array.isArray(rawRecord.languages) ? rawRecord.languages : [])
+      ]
+        .map((entry) => normalizeLanguageCode(entry))
+        .filter(Boolean)
+    : []
+  if (fromRawArray.length > 0) {
+    return Array.from(new Set(fromRawArray))
+  }
+
   const fromArray = Array.isArray(variant.data.languageCodes)
     ? variant.data.languageCodes.map((entry) => normalizeLanguageCode(entry)).filter(Boolean)
     : []
@@ -100,13 +143,11 @@ const variantLanguageRank = (variant: DbRecord<ChapterVariantData>, preferredLan
 
   let best = Number.MAX_SAFE_INTEGER
   for (const language of languages) {
-    const index = preferredLanguageCodes.findIndex((preferred) => {
-      const normalizedPreferred = normalizeLanguageCode(preferred)
-      return normalizedPreferred === language || normalizedPreferred === language.split('-')[0]
+    preferredLanguageCodes.forEach((preferred, index) => {
+      const score = languagePreferenceScore(language, preferred)
+      if (score === null) return
+      best = Math.min(best, index * 10 + score)
     })
-    if (index >= 0) {
-      best = Math.min(best, index)
-    }
   }
 
   return best
@@ -219,6 +260,11 @@ export const resolveChapterVariants = (
 
   for (const canonical of sortedCanonical) {
     const mappings = mappingsByCanonical.get(canonical.id) ?? []
+    const canonicalRaw =
+      canonical.data.raw && typeof canonical.data.raw === 'object'
+        ? (canonical.data.raw as Record<string, unknown>)
+        : null
+    const isGeneratedPlaceholder = canonicalRaw?.generated === true
     const candidates = mappings
       .map((mapping) =>
         typeof mapping.data.variantChapterId === 'string' ? mapping.data.variantChapterId : ''
@@ -249,6 +295,10 @@ export const resolveChapterVariants = (
             '-'
         }
       })
+      continue
+    }
+
+    if (mappings.length === 0 && isGeneratedPlaceholder && chapterVariants.length > 0) {
       continue
     }
 

@@ -4,6 +4,7 @@ import { logoIcon } from 'assets'
 import { Avatar, AvatarFallback, AvatarImage } from 'components/ui/avatar'
 import { Button } from 'components/ui/button'
 import { cn } from 'utils'
+import { useTranslation } from 'react-i18next'
 
 interface LeftListItemProps {
   title: string
@@ -12,7 +13,6 @@ interface LeftListItemProps {
   onClick?: () => void
   onRemove?: () => void
   removing?: boolean
-  confirmRemove?: boolean
   active?: boolean
 }
 
@@ -23,9 +23,9 @@ export const LeftListItem: FC<LeftListItemProps> = ({
   onClick,
   onRemove,
   removing,
-  confirmRemove,
   active
 }) => {
+  const { t } = useTranslation()
   return (
     <div
       className={cn(
@@ -59,11 +59,8 @@ export const LeftListItem: FC<LeftListItemProps> = ({
             event.stopPropagation()
             onRemove()
           }}
-          className={cn(
-            'h-8 w-8 shrink-0 rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive',
-            confirmRemove ? 'bg-destructive/10 text-destructive' : ''
-          )}
-          aria-label={`Remove ${title}`}
+          className="h-8 w-8 shrink-0 rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          aria-label={t('library.remove.buttonLabel', { title })}
         >
           <Trash2 className="size-4" />
         </Button>

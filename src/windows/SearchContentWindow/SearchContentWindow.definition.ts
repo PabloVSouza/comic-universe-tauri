@@ -7,19 +7,26 @@ export const searchContentWindowDefinition: WindowDefinition<SearchContentWindow
     title: 'Search Content',
     overlay: true,
     unique: true,
-    closeable: true,
+    closeable: false,
     minimizable: false,
     maximizable: false,
     resizable: false,
     movable: false,
     titleBar: false,
-    contentClassName: 'h-full w-full overflow-y-auto'
+    contentClassName: 'h-full w-full overflow-y-auto overscroll-none'
   },
-  initialStatus: () =>
-    ({
-      startPosition: 'topLeft',
-      positionAnchor: 'startPosition',
-      width: '100%',
-      height: '100%'
-    })
+  initialStatus: ({ isMobile }) =>
+    isMobile
+      ? {
+          startPosition: 'center',
+          positionAnchor: 'startPosition',
+          width: '100%',
+          height: '100%'
+        }
+      : {
+          startPosition: 'center',
+          positionAnchor: 'startPosition',
+          width: '94%',
+          height: '85%'
+        }
 }

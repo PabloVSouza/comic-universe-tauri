@@ -1,9 +1,11 @@
-import { ComponentProps, FC, useEffect, useRef, useState } from 'react'
+import { ComponentProps, FC, useEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import { BgBox } from 'components'
-import { dbDelete, dbFind, restQueryKeys, useDbListQuery, type WorkData } from 'services'
+import { Button } from 'components/ui/button'
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from 'components/ui/sheet'
+import { dbDelete, dbFind, restQueryKeys, useDbListQuery, type DbRecord, type WorkData } from 'services'
 import { cn } from 'utils'
+import { useTranslation } from 'react-i18next'
 import { LeftListItem } from './LeftListItem'
 
 interface LeftListProps extends ComponentProps<'div'> {
@@ -17,12 +19,19 @@ export const LeftList: FC<LeftListProps> = ({
   onSelectWork,
   ...props
 }) => {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const worksQuery = useDbListQuery<WorkData>('works', 500, 0)
   const [removingWorkId, setRemovingWorkId] = useState<string | null>(null)
-  const [pendingDeleteWorkId, setPendingDeleteWorkId] = useState<string | null>(null)
+  const [confirmDeleteWorkId, setConfirmDeleteWorkId] = useState<string | null>(null)
+  const [optimisticallyRemovedWorkIds, setOptimisticallyRemovedWorkIds] = useState<Set<string>>(new Set())
   const hasInitializedSelectionRef = useRef(false)
-  const pendingDeleteTimeoutRef = useRef<number | null>(null)
+
+  const visibleWorks = useMemo(
+    () =>
+      (worksQuery.data ?? []).filter((work) => !optimisticallyRemovedWorkIds.has(work.id)),
+    [optimisticallyRemovedWorkIds, worksQuery.data]
+  )
 
   useEffect(() => {
     if (selectedWorkId) {
@@ -33,50 +42,32 @@ export const LeftList: FC<LeftListProps> = ({
   useEffect(() => {
     if (hasInitializedSelectionRef.current) return
 
-    if (!selectedWorkId && worksQuery.data?.length) {
+    if (!selectedWorkId && visibleWorks.length) {
       hasInitializedSelectionRef.current = true
-      onSelectWork?.(worksQuery.data[0].id)
+      onSelectWork?.(visibleWorks[0].id)
     }
-  }, [selectedWorkId, worksQuery.data, onSelectWork])
-
-  useEffect(() => {
-    return () => {
-      if (pendingDeleteTimeoutRef.current !== null) {
-        window.clearTimeout(pendingDeleteTimeoutRef.current)
-      }
-    }
-  }, [])
+  }, [selectedWorkId, visibleWorks, onSelectWork])
 
   const removeWork = async (workId: string) => {
     if (removingWorkId) return
 
-    const targetWork = (worksQuery.data ?? []).find((work) => work.id === workId)
-    const targetName =
-      (typeof targetWork?.data.title === 'string' && targetWork.data.title) ||
-      (typeof targetWork?.data.name === 'string' && targetWork.data.name) ||
-      workId
-
-    if (pendingDeleteWorkId !== workId) {
-      setPendingDeleteWorkId(workId)
-      if (pendingDeleteTimeoutRef.current !== null) {
-        window.clearTimeout(pendingDeleteTimeoutRef.current)
-      }
-      pendingDeleteTimeoutRef.current = window.setTimeout(() => {
-        setPendingDeleteWorkId((current) => (current === workId ? null : current))
-        pendingDeleteTimeoutRef.current = null
-      }, 3000)
-      toast.warning(`Tap remove again to delete "${targetName}"`, { duration: 2500 })
-      return
-    }
-
-    setPendingDeleteWorkId(null)
-    if (pendingDeleteTimeoutRef.current !== null) {
-      window.clearTimeout(pendingDeleteTimeoutRef.current)
-      pendingDeleteTimeoutRef.current = null
-    }
-
     setRemovingWorkId(workId)
     try {
+      setOptimisticallyRemovedWorkIds((current) => {
+        const next = new Set(current)
+        next.add(workId)
+        return next
+      })
+      queryClient.setQueryData<Array<DbRecord<WorkData>>>(
+        restQueryKeys.dbList('works', 500, 0),
+        (current) => (current ?? []).filter((work) => work.id !== workId)
+      )
+
+      if (selectedWorkId === workId) {
+        hasInitializedSelectionRef.current = true
+        onSelectWork?.(null)
+      }
+
       const [comics, chaptersByWork, canonicalChapters, chapterVariants, chapterMappings, readProgress] =
         await Promise.all([
           dbFind<Record<string, unknown>>('comics', 'workId', workId, 5000),
@@ -114,12 +105,6 @@ export const LeftList: FC<LeftListProps> = ({
       await Promise.all(
         [...deleteTargets.values()].map((target) => dbDelete(target.table, target.id))
       )
-
-      if (selectedWorkId === workId) {
-        hasInitializedSelectionRef.current = true
-        onSelectWork?.(null)
-      }
-
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: restQueryKeys.dbList('works', 500, 0) }),
         queryClient.invalidateQueries({ queryKey: restQueryKeys.comics }),
@@ -129,15 +114,31 @@ export const LeftList: FC<LeftListProps> = ({
         queryClient.invalidateQueries({ queryKey: ['rest', 'db', 'find', 'chapter_mappings'] }),
         queryClient.invalidateQueries({ queryKey: ['rest', 'db', 'find', 'read_progress'] })
       ])
+    } catch (error) {
+      setOptimisticallyRemovedWorkIds((current) => {
+        const next = new Set(current)
+        next.delete(workId)
+        return next
+      })
+      await queryClient.invalidateQueries({ queryKey: restQueryKeys.dbList('works', 500, 0) })
+      throw error
     } finally {
       setRemovingWorkId(null)
+      setConfirmDeleteWorkId((current) => (current === workId ? null : current))
     }
   }
+
+  const confirmDeleteWork = (worksQuery.data ?? []).find((work) => work.id === confirmDeleteWorkId) ?? null
+  const confirmDeleteWorkName =
+    (typeof confirmDeleteWork?.data.title === 'string' && confirmDeleteWork.data.title) ||
+    (typeof confirmDeleteWork?.data.name === 'string' && confirmDeleteWork.data.name) ||
+    confirmDeleteWorkId ||
+    ''
 
   return (
     <BgBox className={cn('min-h-0 overflow-auto', className)} {...props}>
       <div className="divide-y divide-white/10">
-        {(worksQuery.data ?? []).map((work) => {
+        {visibleWorks.map((work) => {
           const workName =
             (typeof work.data.title === 'string' && work.data.title) ||
             (typeof work.data.name === 'string' && work.data.name) ||
@@ -153,17 +154,56 @@ export const LeftList: FC<LeftListProps> = ({
                 hasInitializedSelectionRef.current = true
                 onSelectWork?.(work.id)
               }}
-              onRemove={() => void removeWork(work.id)}
+              onRemove={() => setConfirmDeleteWorkId(work.id)}
               removing={removingWorkId === work.id}
-              confirmRemove={pendingDeleteWorkId === work.id}
               active={work.id === selectedWorkId}
             />
           )
         })}
-        {!worksQuery.data?.length && (
-          <div className="p-3 text-sm text-muted-foreground">No comics available.</div>
+        {!visibleWorks.length && (
+          <div className="p-3 text-sm text-muted-foreground">{t('library.empty')}</div>
         )}
       </div>
+      <Sheet
+        open={Boolean(confirmDeleteWorkId)}
+        onOpenChange={(open) => {
+          if (!open && !removingWorkId) {
+            setConfirmDeleteWorkId(null)
+          }
+        }}
+      >
+        <SheetContent side="bottom" showCloseButton={false} className="gap-0">
+          <SheetHeader>
+            <SheetTitle>{t('library.remove.confirmTitle')}</SheetTitle>
+            <SheetDescription>
+              {removingWorkId
+                ? t('library.remove.removing')
+                : t('library.remove.confirmDescription', { title: confirmDeleteWorkName })}
+            </SheetDescription>
+          </SheetHeader>
+          <SheetFooter className="sm:flex-row">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConfirmDeleteWorkId(null)}
+              disabled={Boolean(removingWorkId)}
+            >
+              {t('library.remove.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                if (!confirmDeleteWorkId) return
+                void removeWork(confirmDeleteWorkId)
+              }}
+              disabled={Boolean(removingWorkId)}
+            >
+              {removingWorkId ? t('library.remove.removing') : t('library.remove.confirmAction')}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </BgBox>
   )
 }
