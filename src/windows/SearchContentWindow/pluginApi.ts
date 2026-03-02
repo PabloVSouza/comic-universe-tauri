@@ -38,6 +38,7 @@ interface NormalizedChapter {
   siteLink?: string
   name: string
   number: string
+  languageCodes: string[]
   pages: Array<Record<string, unknown>>
   raw: Record<string, unknown>
 }
@@ -68,6 +69,7 @@ export interface SearchResultItem {
   languages: string[]
   chapterCount: number | null
   rawComic: Record<string, unknown>
+  contentSiteIdByPlugin?: Record<string, string>
 }
 
 export interface SearchResultDetails {
@@ -86,6 +88,11 @@ export interface PluginSearchError {
 export interface SearchByPluginsResult {
   results: SearchResultItem[]
   errors: PluginSearchError[]
+}
+
+export interface AddToDatabaseProgress {
+  value: number
+  message?: string
 }
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, '')
@@ -111,10 +118,27 @@ const normalizeTitleToken = (value: string): string =>
     .replace(/[^a-z0-9 ]+/g, '')
     .trim()
 
+const tokenizeNormalizedText = (value: string): string[] =>
+  normalizeTitleToken(value)
+    .split(' ')
+    .map((token) => token.trim())
+    .filter(Boolean)
+
 const normalizeChapterNumber = (value: string): string => {
   const parsed = Number(value)
   if (Number.isFinite(parsed)) return String(parsed)
   return value.trim().toLowerCase()
+}
+
+const parseOptionalNonNegativeNumber = (value: unknown): number | null => {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 ? value : null
+  }
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
 const stableId = (...values: Array<string | undefined>): string => {
@@ -182,7 +206,8 @@ const needsDetailsFetch = (result: SearchResultItem): boolean => {
   const descriptionFromSearch =
     pickString(result.rawComic, ['synopsis', 'description']) || result.description
   const coverFromSearch = pickString(result.rawComic, ['cover']) || result.cover
-  return !descriptionFromSearch || !coverFromSearch
+  const missingChapterCount = result.chapterCount === null || !Number.isFinite(result.chapterCount)
+  return !descriptionFromSearch || !coverFromSearch || missingChapterCount
 }
 
 const withTimeout = async <T>(promise: Promise<T>, timeoutMs = 30_000): Promise<T> =>
@@ -296,6 +321,7 @@ const normalizeChapters = async (
   chaptersRaw: unknown[]
 ): Promise<NormalizedChapter[]> => {
   const comicSiteId = pickString(rawComic, ['siteId', 'id'])
+  const preferredLanguages = resolvePreferredLanguageCodes(plugin)
   const chapters = chaptersRaw.map(asRecord).filter((chapter) => Object.keys(chapter).length > 0)
   const normalized: NormalizedChapter[] = []
 
@@ -307,33 +333,68 @@ const normalizeChapters = async (
         const fetchedPages = await postPlugin<Array<Record<string, unknown>>>(plugin.endpoint, 'getPages', {
           siteId: comicSiteId,
           chapterSiteId,
-          languageCodes: resolvePreferredLanguageCodes(plugin)
+          languageCodes: preferredLanguages
         })
         pages = parsePagesValue(fetchedPages)
       } catch {
         pages = []
       }
     }
-
-    if (pages.length === 0) continue
+    const languageCodes = Array.from(
+      new Set(
+        [
+          ...pickArrayStrings(chapter, ['languageCodes', 'languages']),
+          pickString(chapter, ['language', 'lang'])
+        ]
+          .map((value) => normalizeLanguageCode(value))
+          .filter(Boolean)
+      )
+    )
 
     normalized.push({
       siteId: pickString(chapter, ['siteId', 'id']),
       siteLink: pickString(chapter, ['siteLink', 'url', 'path']),
       name: pickString(chapter, ['name', 'title']),
       number: pickString(chapter, ['number', 'chapterNumber']),
+      languageCodes,
       pages,
       raw: chapter
     })
   }
 
-  return normalized
+  const consolidatedByNumber = new Map<string, NormalizedChapter>()
+  for (const chapter of normalized) {
+    const chapterKey = normalizeChapterNumber(chapter.number || chapter.siteId || chapter.name)
+    const current = consolidatedByNumber.get(chapterKey)
+    if (!current) {
+      consolidatedByNumber.set(chapterKey, chapter)
+      continue
+    }
+
+    const currentRank = chapterLanguageRank(current.languageCodes, preferredLanguages)
+    const nextRank = chapterLanguageRank(chapter.languageCodes, preferredLanguages)
+    const shouldReplace =
+      chapter.pages.length > current.pages.length ||
+      (chapter.pages.length === current.pages.length &&
+        (nextRank < currentRank ||
+          (nextRank === currentRank &&
+            preferredChapterTitle(chapter.name).length > preferredChapterTitle(current.name).length)))
+
+    if (!shouldReplace) {
+      current.languageCodes = Array.from(new Set([...current.languageCodes, ...chapter.languageCodes]))
+      continue
+    }
+
+    chapter.languageCodes = Array.from(new Set([...current.languageCodes, ...chapter.languageCodes]))
+    consolidatedByNumber.set(chapterKey, chapter)
+  }
+
+  return Array.from(consolidatedByNumber.values())
 }
 
 const normalizeCanonicalChapters = (chaptersRaw: unknown[], fallbackLanguages: string[]): CanonicalChapter[] => {
   const chapters = chaptersRaw.map(asRecord).filter((chapter) => Object.keys(chapter).length > 0)
-
-  return chapters.map((chapter, index) => {
+  const canonical = chapters.map((chapter, index) => {
     const number = pickString(chapter, ['number', 'chapterNumber']) || String(index + 1)
     const languageCodes = Array.from(
       new Set(
@@ -354,7 +415,44 @@ const normalizeCanonicalChapters = (chaptersRaw: unknown[], fallbackLanguages: s
       raw: chapter
     }
   })
+
+  const byNumber = new Map<string, CanonicalChapter>()
+  for (const chapter of canonical) {
+    const key = normalizeChapterNumber(chapter.number)
+    const current = byNumber.get(key)
+    if (!current) {
+      byNumber.set(key, chapter)
+      continue
+    }
+
+    current.languageCodes = Array.from(new Set([...current.languageCodes, ...chapter.languageCodes]))
+    if (preferredChapterTitle(chapter.name).length > preferredChapterTitle(current.name).length) {
+      current.name = chapter.name
+    }
+    if (!current.siteId && chapter.siteId) {
+      current.siteId = chapter.siteId
+    }
+    if (!current.siteLink && chapter.siteLink) {
+      current.siteLink = chapter.siteLink
+    }
+  }
+
+  return Array.from(byNumber.values())
 }
+
+const chapterLanguageRank = (chapterLanguages: string[], preferredLanguages: string[]): number => {
+  if (chapterLanguages.length === 0) return Number.MAX_SAFE_INTEGER
+
+  return chapterLanguages.reduce((best, language) => {
+    const normalized = normalizeLanguageCode(language)
+    const index = preferredLanguages.findIndex(
+      (preferred) => preferred === normalized || preferred === normalized.split('-')[0]
+    )
+    return index >= 0 ? Math.min(best, index) : best
+  }, Number.MAX_SAFE_INTEGER)
+}
+
+const preferredChapterTitle = (value: string): string => value.trim()
 
 const normalizeSearchResult = (plugin: InstalledPlugin, rawComicInput: unknown): SearchResultItem | null => {
   const rawComic = asRecord(rawComicInput)
@@ -421,6 +519,68 @@ const pickBestSearchMatch = (title: string, candidates: unknown[]): Record<strin
   return best
 }
 
+const searchMatchScore = (query: string, title: string): number => {
+  const normalizedQuery = normalizeTitleToken(query)
+  const normalizedTitle = normalizeTitleToken(title)
+  if (!normalizedQuery || !normalizedTitle) return 0
+
+  if (normalizedQuery === normalizedTitle) return 1
+  if (normalizedTitle.startsWith(normalizedQuery)) return 0.95
+  if (normalizedTitle.includes(normalizedQuery)) return 0.85
+
+  const queryTokens = tokenizeNormalizedText(query)
+  const titleTokens = new Set(tokenizeNormalizedText(title))
+  if (queryTokens.length === 0) return 0
+
+  let matched = 0
+  for (const token of queryTokens) {
+    if (titleTokens.has(token)) {
+      matched += 1
+      continue
+    }
+    for (const titleToken of titleTokens) {
+      if (titleToken.startsWith(token) || token.startsWith(titleToken)) {
+        matched += 0.8
+        break
+      }
+    }
+  }
+
+  return Math.max(0, Math.min(1, matched / queryTokens.length))
+}
+
+const normalizedAppLanguageCodes = (): string[] => {
+  const primary = normalizeLanguageCode(i18n.resolvedLanguage || i18n.language || 'en')
+  const base = primary.split('-')[0]
+  return Array.from(new Set([primary, base].filter(Boolean)))
+}
+
+const languageMatchesApp = (languages: string[]): boolean => {
+  const normalizedItemLanguages = languages.map(normalizeLanguageCode)
+  const appLanguages = normalizedAppLanguageCodes()
+  return normalizedItemLanguages.some((lang) => appLanguages.includes(lang) || appLanguages.includes(lang.split('-')[0]))
+}
+
+const titleRelationScore = (left: string, right: string): number => {
+  const leftTitle = normalizeTitleToken(left)
+  const rightTitle = normalizeTitleToken(right)
+  if (!leftTitle || !rightTitle) return 0
+  if (leftTitle === rightTitle) return 1
+  if (leftTitle.includes(rightTitle) || rightTitle.includes(leftTitle)) return 0.94
+
+  const leftTokens = new Set(tokenizeNormalizedText(left))
+  const rightTokens = new Set(tokenizeNormalizedText(right))
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0
+
+  let overlap = 0
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) overlap += 1
+  }
+
+  const union = new Set([...leftTokens, ...rightTokens]).size
+  return union > 0 ? overlap / union : 0
+}
+
 const fetchContentChaptersForResult = async (
   plugin: InstalledPlugin,
   result: SearchResultItem
@@ -430,6 +590,15 @@ const fetchContentChaptersForResult = async (
   let siteId = result.siteId
 
   if (plugin.id !== result.pluginId) {
+    const mappedSiteId = result.contentSiteIdByPlugin?.[plugin.id]
+    if (mappedSiteId) {
+      const chaptersRaw = await postPlugin<unknown[]>(plugin.endpoint, 'getChapters', {
+        siteId: mappedSiteId,
+        languageCodes: preferredLanguages
+      })
+      return normalizeChapters(plugin, { siteId: mappedSiteId }, chaptersRaw)
+    }
+
     const pluginSearchResults = await postPlugin<unknown[]>(plugin.endpoint, 'search', {
       search: result.title,
       languageCodes: preferredLanguages
@@ -477,6 +646,7 @@ export const searchByPlugins = async (
   }
 
   const metadataPlugins = plugins.filter((plugin) => plugin.providesMetadata)
+  const contentPlugins = plugins.filter((plugin) => plugin.providesContent)
   if (metadataPlugins.length === 0) {
     return { results: [], errors: [] }
   }
@@ -490,10 +660,17 @@ export const searchByPlugins = async (
           languageCodes: preferredLanguages
         })
 
-        const limited = baseList.slice(0, 25)
+        const limited = baseList.slice(0, 50)
+        const minScore = trimmed.length <= 3 ? 0.34 : 0.5
         return {
           results: limited
-            .map((item) => normalizeSearchResult(plugin, item))
+            .map((item) => {
+              const normalized = normalizeSearchResult(plugin, item)
+              if (!normalized) return null
+              const score = searchMatchScore(trimmed, normalized.title)
+              if (score < minScore) return null
+              return normalized
+            })
             .filter((item): item is SearchResultItem => item !== null),
           error: null as PluginSearchError | null
         }
@@ -512,9 +689,143 @@ export const searchByPlugins = async (
     })
   )
 
-  const results = byPlugin
-    .flatMap((entry) => entry.results)
-    .sort((a, b) => a.title.localeCompare(b.title))
+  const dedupedBySource = new Map<string, SearchResultItem>()
+  for (const item of byPlugin.flatMap((entry) => entry.results)) {
+    const key = `${item.pluginTag}:${item.siteId}`
+    if (!dedupedBySource.has(key)) {
+      dedupedBySource.set(key, item)
+    }
+  }
+
+  // Probe content providers too so metadata results can be ranked by real content availability
+  // in the current app language.
+  const contentByPlugin = await Promise.all(
+    contentPlugins.map(async (plugin) => {
+      try {
+        const preferredLanguages = resolvePreferredLanguageCodes(plugin)
+        const baseList = await postPlugin<unknown[]>(plugin.endpoint, 'search', {
+          search: trimmed,
+          languageCodes: preferredLanguages
+        })
+        return baseList
+          .slice(0, 40)
+          .map((item) => normalizeSearchResult(plugin, item))
+          .filter((item): item is SearchResultItem => item !== null)
+      } catch {
+        return [] as SearchResultItem[]
+      }
+    })
+  )
+  const contentCandidates = contentByPlugin.flat()
+  const contentSiteByResultId = new Map<string, Map<string, string>>()
+
+  const relatedContentByResultId = new Map<string, { hasAny: boolean; hasAppLanguage: boolean }>()
+  for (const item of dedupedBySource.values()) {
+    let hasAny = false
+    let hasAppLanguage = false
+    const bestByPlugin = new Map<string, { score: number; siteId: string; languageBoost: number }>()
+    for (const content of contentCandidates) {
+      const score = titleRelationScore(item.title, content.title)
+      if (score < 0.7) continue
+      hasAny = true
+      const inAppLanguage = languageMatchesApp(content.languages)
+      if (inAppLanguage) {
+        hasAppLanguage = true
+      }
+
+      const languageBoost = inAppLanguage ? 1 : 0
+      const current = bestByPlugin.get(content.pluginId)
+      if (!current || score + languageBoost * 0.2 > current.score + current.languageBoost * 0.2) {
+        bestByPlugin.set(content.pluginId, {
+          score,
+          siteId: content.siteId,
+          languageBoost
+        })
+      }
+    }
+    relatedContentByResultId.set(item.id, { hasAny, hasAppLanguage })
+    if (bestByPlugin.size > 0) {
+      const map = new Map<string, string>()
+      for (const [pluginId, match] of bestByPlugin.entries()) {
+        map.set(pluginId, match.siteId)
+      }
+      contentSiteByResultId.set(item.id, map)
+    }
+  }
+
+  // Relate metadata results across plugins by title similarity so we surface one best representative
+  // with merged metadata hints.
+  const clusters: SearchResultItem[][] = []
+  for (const item of dedupedBySource.values()) {
+    const cluster = clusters.find((current) =>
+      current.some((candidate) => titleRelationScore(candidate.title, item.title) >= 0.74)
+    )
+    if (cluster) {
+      cluster.push(item)
+    } else {
+      clusters.push([item])
+    }
+  }
+
+  const mergedResults = clusters.map((cluster) => {
+    const sortedCluster = [...cluster].sort((a, b) => {
+      const aContent = relatedContentByResultId.get(a.id)
+      const bContent = relatedContentByResultId.get(b.id)
+
+      const aBoost =
+        (aContent?.hasAppLanguage ? 3 : 0) + (aContent?.hasAny ? 1 : 0) + (languageMatchesApp(a.languages) ? 1 : 0)
+      const bBoost =
+        (bContent?.hasAppLanguage ? 3 : 0) + (bContent?.hasAny ? 1 : 0) + (languageMatchesApp(b.languages) ? 1 : 0)
+
+      const scoreDiff = searchMatchScore(trimmed, b.title) + bBoost - (searchMatchScore(trimmed, a.title) + aBoost)
+      if (Math.abs(scoreDiff) > 0.001) return scoreDiff
+      return b.title.length - a.title.length
+    })
+
+    const representative = { ...sortedCluster[0] }
+    representative.languages = Array.from(new Set(cluster.flatMap((item) => item.languages)))
+    representative.chapterCount = cluster.reduce<number | null>((max, item) => {
+      if (item.chapterCount === null || !Number.isFinite(item.chapterCount)) return max
+      if (max === null) return item.chapterCount
+      return Math.max(max, item.chapterCount)
+    }, representative.chapterCount ?? null)
+
+    const relatedSourceNames = Array.from(
+      new Set(cluster.map((item) => item.sourceName || item.pluginName).filter(Boolean))
+    )
+    representative.sourceName =
+      relatedSourceNames.length > 1 ? relatedSourceNames.join(' + ') : relatedSourceNames[0] || representative.sourceName
+
+    const mergedContentMap = new Map<string, string>()
+    for (const item of sortedCluster) {
+      const byPlugin = contentSiteByResultId.get(item.id)
+      if (!byPlugin) continue
+      for (const [pluginId, siteId] of byPlugin.entries()) {
+        if (!mergedContentMap.has(pluginId)) {
+          mergedContentMap.set(pluginId, siteId)
+        }
+      }
+    }
+    if (mergedContentMap.size > 0) {
+      representative.contentSiteIdByPlugin = Object.fromEntries(mergedContentMap.entries())
+    }
+
+    return representative
+  })
+
+  const results = mergedResults.sort((a, b) => {
+    const aContent = relatedContentByResultId.get(a.id)
+    const bContent = relatedContentByResultId.get(b.id)
+
+    const aBoost =
+      (aContent?.hasAppLanguage ? 3 : 0) + (aContent?.hasAny ? 1 : 0) + (languageMatchesApp(a.languages) ? 1 : 0)
+    const bBoost =
+      (bContent?.hasAppLanguage ? 3 : 0) + (bContent?.hasAny ? 1 : 0) + (languageMatchesApp(b.languages) ? 1 : 0)
+
+    const scoreDiff = searchMatchScore(trimmed, b.title) + bBoost - (searchMatchScore(trimmed, a.title) + aBoost)
+    if (Math.abs(scoreDiff) > 0.001) return scoreDiff
+    return a.title.localeCompare(b.title)
+  })
 
   const errors = byPlugin
     .map((entry) => entry.error)
@@ -525,10 +836,19 @@ export const searchByPlugins = async (
 
 export const addSearchResultToDatabase = async (
   result: SearchResultItem,
-  selectedPlugins: InstalledPlugin[]
+  selectedPlugins: InstalledPlugin[],
+  onProgress?: (progress: AddToDatabaseProgress) => void
 ): Promise<void> => {
+  const updateProgress = (value: number, message?: string) => {
+    onProgress?.({
+      value: Math.max(0, Math.min(100, Math.round(value))),
+      message
+    })
+  }
+
   const metadataPlugin = selectedPlugins.find((plugin) => plugin.id === result.pluginId)
   const preferredLanguages = resolvePreferredLanguageCodes(metadataPlugin)
+  updateProgress(5, 'searchContent.progress.loadingDetails')
   let details: Record<string, unknown> = {}
   if (needsDetailsFetch(result)) {
     details = asRecord(
@@ -539,13 +859,26 @@ export const addSearchResultToDatabase = async (
     )
   }
 
-  const metadataChaptersRaw = await postPlugin<unknown[]>(result.endpoint, 'getChapters', {
-    siteId: result.siteId,
-    languageCodes: preferredLanguages
-  })
+  let metadataChaptersRaw: unknown[] = []
+  try {
+    updateProgress(12, 'searchContent.progress.loadingChapterList')
+    metadataChaptersRaw = await postPlugin<unknown[]>(result.endpoint, 'getChapters', {
+      siteId: result.siteId,
+      languageCodes: preferredLanguages
+    })
+  } catch {
+    metadataChaptersRaw = []
+  }
 
   const workId = stableId('work', result.pluginTag, result.siteId || result.siteLink || result.title)
   const sourceKey = `${result.pluginTag}:${result.siteId}`
+  const chapterCountFromDetails = parseOptionalNonNegativeNumber(
+    pickString(details, ['chapterCount', 'chaptersCount', 'totalChapters'])
+  )
+  const resolvedChapterCount =
+    chapterCountFromDetails !== null
+      ? chapterCountFromDetails
+      : result.chapterCount
   const workData: Record<string, unknown> = {
     title: result.title,
     description:
@@ -563,13 +896,30 @@ export const addSearchResultToDatabase = async (
     sourceSiteLink: result.siteLink || null,
     contentType: result.contentType,
     languageCodes: result.languages,
-    chapterCount: result.chapterCount,
+    chapterCount: resolvedChapterCount,
     rawMetadata: { ...result.rawComic, ...details }
   }
 
+  updateProgress(20, 'searchContent.progress.savingWork')
   await dbUpsert('works', workData, workId)
 
-  const canonicalChapters = normalizeCanonicalChapters(metadataChaptersRaw, result.languages)
+  const effectiveChapterCount =
+    chapterCountFromDetails !== null && chapterCountFromDetails > 0
+      ? chapterCountFromDetails
+      : (result.chapterCount ?? 0)
+
+  let canonicalChapters = normalizeCanonicalChapters(metadataChaptersRaw, result.languages)
+  if (canonicalChapters.length === 0 && effectiveChapterCount > 0) {
+    canonicalChapters = Array.from({ length: effectiveChapterCount }, (_, index) => {
+      const number = String(index + 1)
+      return {
+        number,
+        name: `Chapter ${number}`,
+        languageCodes: result.languages.length ? result.languages : ['unknown'],
+        raw: { generated: true, source: 'chapterCount' }
+      }
+    })
+  }
   const canonicalByNumber = new Map<string, { id: string; number: string; name: string }>()
 
   for (let index = 0; index < canonicalChapters.length; index += 1) {
@@ -592,6 +942,8 @@ export const addSearchResultToDatabase = async (
       raw: chapter.raw
     }
     await dbUpsert('canonical_chapters', chapterData, canonicalChapterId)
+    const ratio = canonicalChapters.length > 0 ? (index + 1) / canonicalChapters.length : 1
+    updateProgress(20 + ratio * 20, 'searchContent.progress.savingChapterIndex')
 
     canonicalByNumber.set(normalizeChapterNumber(chapterNumber), {
       id: canonicalChapterId,
@@ -609,6 +961,7 @@ export const addSearchResultToDatabase = async (
   let bestContentPlugin: InstalledPlugin | null = null
   let bestContentChapters: NormalizedChapter[] = []
 
+  updateProgress(42, 'searchContent.progress.loadingContentSources')
   for (const contentPlugin of contentPlugins) {
     let contentChapters: NormalizedChapter[] = []
     try {
@@ -645,7 +998,7 @@ export const addSearchResultToDatabase = async (
         number: chapterNumber,
         name: chapter.name || `Chapter ${chapterNumber}`,
         pages: chapter.pages,
-        languageCodes: result.languages,
+        languageCodes: chapter.languageCodes,
         raw: chapter.raw
       }
       await dbUpsert('chapter_variants', variantData, variantChapterId)
@@ -691,9 +1044,13 @@ export const addSearchResultToDatabase = async (
     ...details
   }
 
+  updateProgress(82, 'searchContent.progress.savingComic')
   await dbUpsert('comics', comicData, comicId)
 
-  if (!bestContentPlugin || bestContentChapters.length === 0) return
+  if (!bestContentPlugin || bestContentChapters.length === 0) {
+    updateProgress(100, 'searchContent.progress.done')
+    return
+  }
 
   for (let index = 0; index < bestContentChapters.length; index += 1) {
     const chapter = bestContentChapters[index]
@@ -717,13 +1074,17 @@ export const addSearchResultToDatabase = async (
       sourceName: bestContentPlugin.name,
       sourceId: bestContentPlugin.sourceId || null,
       pluginId: bestContentPlugin.id,
-      languageCodes: result.languages,
+      languageCodes: chapter.languageCodes,
       hasOffline: false,
       offline: 0
     }
 
     await dbUpsert('chapters', chapterData, chapterId)
+    const ratio = bestContentChapters.length > 0 ? (index + 1) / bestContentChapters.length : 1
+    updateProgress(82 + ratio * 18, 'searchContent.progress.savingReadableChapters')
   }
+
+  updateProgress(100, 'searchContent.progress.done')
 }
 
 export const loadSearchResultDetails = async (
@@ -747,9 +1108,11 @@ export const loadSearchResultDetails = async (
     ''
   const cover =
     pickString(details, ['cover']) || pickString(result.rawComic, ['cover']) || result.cover || ''
-  const chapterCountFromDetails = Number(pickString(details, ['chapterCount', 'chaptersCount', 'totalChapters']))
+  const chapterCountFromDetails = parseOptionalNonNegativeNumber(
+    pickString(details, ['chapterCount', 'chaptersCount', 'totalChapters'])
+  )
   const chapterCount =
-    Number.isFinite(chapterCountFromDetails) && chapterCountFromDetails >= 0
+    chapterCountFromDetails !== null
       ? chapterCountFromDetails
       : (result.chapterCount ?? 0)
 

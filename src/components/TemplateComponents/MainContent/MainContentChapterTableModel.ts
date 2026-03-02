@@ -1,9 +1,10 @@
-import type { ChapterData, DbRecord } from 'services'
+import type { ResolvedChapterRecord } from 'services'
 
 export interface ChapterRowModel {
   id: string
   chapterNumber: string
   chapterName: string
+  chapterLanguage: string
   progress: number
   isRead: boolean
   numberSortValue: number | null
@@ -23,28 +24,46 @@ const extractComparableNumber = (raw: unknown): number | null => {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-const getChapterNumber = (chapter: DbRecord<ChapterData>): string => {
+const getChapterNumber = (chapter: ResolvedChapterRecord): string => {
   const number = chapter.data.number
   if (typeof number === 'string' && number.trim().length) return number.trim()
   return '-'
 }
 
-const getChapterName = (chapter: DbRecord<ChapterData>): string => {
+const getChapterName = (chapter: ResolvedChapterRecord): string => {
   const name = chapter.data.name
   if (typeof name === 'string' && name.trim().length) return name.trim()
   return ''
 }
 
+const getChapterLanguage = (chapter: ResolvedChapterRecord): string => {
+  const direct = chapter.data.language
+  if (typeof direct === 'string' && direct.trim().length) return direct.trim().toUpperCase()
+
+  const fromArray = Array.isArray(chapter.data.languageCodes)
+    ? chapter.data.languageCodes.find((entry) => typeof entry === 'string' && entry.trim().length)
+    : null
+  if (typeof fromArray === 'string') return fromArray.trim().toUpperCase()
+
+  return ''
+}
+
 export const mapChapterToRow = (
-  chapter: DbRecord<ChapterData>,
+  chapter: ResolvedChapterRecord,
   progressByChapterId?: Map<string, number>
 ): ChapterRowModel => {
-  const progress = progressByChapterId?.get(chapter.id) ?? 0
+  const variantChapterId =
+    typeof chapter.data.variantChapterId === 'string' ? chapter.data.variantChapterId : ''
+  const progress =
+    progressByChapterId?.get(chapter.id) ??
+    (variantChapterId ? progressByChapterId?.get(variantChapterId) : undefined) ??
+    0
 
   return {
     id: chapter.id,
     chapterNumber: getChapterNumber(chapter),
     chapterName: getChapterName(chapter),
+    chapterLanguage: getChapterLanguage(chapter),
     progress,
     isRead: progress >= 100,
     numberSortValue: extractComparableNumber(chapter.data.number)

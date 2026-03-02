@@ -11,7 +11,7 @@ use std::{
 };
 
 use app_paths::resolve_app_paths;
-use serde_json::Value;
+use serde_json::{json, Value};
 #[cfg(target_os = "macos")]
 use tauri::menu::Menu;
 use tauri::{Emitter, Manager, RunEvent};
@@ -97,8 +97,8 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     );
     let service = DocumentService::new(store.clone());
     let admin_service = AdminService::new(store.clone());
-    ensure_seed_plugins(&service)
-        .map_err(|error| boxed_error(format!("Failed to seed plugins: {error}")))?;
+    seed_default_plugins(&service)
+        .map_err(|error| boxed_error(format!("Failed to seed default plugins: {error}")))?;
     sync_chapters_offline_status(&service, &paths.comics)
         .map_err(|error| boxed_error(format!("Failed to sync offline chapter status: {error}")))?;
 
@@ -121,52 +121,63 @@ fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn ensure_seed_plugins(service: &DocumentService) -> Result<(), String> {
-    const HQNOW_PLUGIN_ID: &str = "plugin:hqnow";
-    const HQNOW_ENDPOINT: &str = "https://comic-universe-plugin-hqnow.vercel.app/api";
-
-    if service
-        .get("plugins", HQNOW_PLUGIN_ID)
-        .map_err(|e| e.to_string())?
-        .is_some()
-    {
-        println!("[seed] hqnow plugin already present by id");
-        return Ok(());
-    }
-
-    let existing_by_endpoint = service
-        .find_by_json_field(
-            "plugins",
-            "endpoint",
-            Value::String(HQNOW_ENDPOINT.to_string()),
-            Some(1),
-        )
-        .map_err(|e| e.to_string())?;
-    if !existing_by_endpoint.is_empty() {
-        println!("[seed] hqnow plugin already present by endpoint");
-        return Ok(());
-    }
-
-    service
-        .upsert(
-            "plugins",
-            Some(HQNOW_PLUGIN_ID.to_string()),
-            serde_json::json!({
-                "name": "HQ Now",
-                "tag": "hqnow",
-                "endpoint": HQNOW_ENDPOINT,
-                "metadataEndpoint": "https://comic-universe-plugin-hqnow.vercel.app/api/metadata",
+fn seed_default_plugins(service: &DocumentService) -> Result<(), String> {
+    let defaults = [
+        (
+            "plugin:anilist",
+            json!({
                 "enabled": true,
-                "version": null,
-                "contentTypes": ["comic"],
-                "languageCodes": [],
-                "sources": [],
-                "installedFrom": "seed"
+                "name": "AniList",
+                "tag": "anilist",
+                "endpoint": "https://comic-universe-plugin-anilist.vercel.app/api",
+                "metadataUrl": "https://comic-universe-plugin-anilist.vercel.app/api/metadata",
+                "contentTypes": ["manga", "comic"],
+                "capabilities": ["metadata"],
+                "languageCodes": ["en"],
+                "sources": [
+                    {
+                        "id": "anilist",
+                        "name": "AniList",
+                        "languageCodes": ["en"],
+                        "isDefault": true
+                    }
+                ]
             }),
-        )
-        .map_err(|e| e.to_string())?;
+        ),
+        (
+            "plugin:mangadex",
+            json!({
+                "enabled": true,
+                "name": "MangaDex",
+                "tag": "mangadex",
+                "endpoint": "https://comic-universe-plugin-mangadex.vercel.app/api",
+                "metadataUrl": "https://comic-universe-plugin-mangadex.vercel.app/api/metadata",
+                "contentTypes": ["manga", "comic"],
+                "capabilities": ["metadata", "content"],
+                "languageCodes": ["en", "pt-br", "es-la", "es", "fr", "de", "it", "ru", "ja"],
+                "sources": [
+                    {
+                        "id": "mangadex",
+                        "name": "MangaDex",
+                        "languageCodes": ["en", "pt-br", "es-la", "es", "fr", "de", "it", "ru", "ja"],
+                        "isDefault": true
+                    }
+                ]
+            }),
+        ),
+    ];
 
-    println!("[seed] inserted plugin:hqnow");
+    for (id, data) in defaults {
+        let exists = service.get("plugins", id).map_err(|e| e.to_string())?.is_some();
+        if exists {
+            continue;
+        }
+
+        service
+            .upsert("plugins", Some(id.to_string()), data)
+            .map_err(|e| e.to_string())?;
+    }
+
     Ok(())
 }
 

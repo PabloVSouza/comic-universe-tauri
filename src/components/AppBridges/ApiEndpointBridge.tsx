@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { isTauri } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
 import { processDeepLinkUrl } from 'services/deepLink'
-import { restQueryKeys, setApiBaseUrl } from 'services'
+import { accountSessionQueryKey, restQueryKeys, setApiBaseUrl } from 'services'
 
 interface ApiEndpointPayload {
   host: string
@@ -31,6 +31,9 @@ export const ApiEndpointBridge: FC = () => {
         unlisten = await listen<ApiEndpointPayload>('api://endpoint', (event) => {
           if (cancelled) return
           setApiBaseUrl(event.payload.baseUrl)
+          void queryClient.invalidateQueries({ queryKey: restQueryKeys.health })
+          void queryClient.invalidateQueries({ queryKey: accountSessionQueryKey })
+          void queryClient.invalidateQueries({ queryKey: ['rest'] })
           console.info(
             `[comic-universe] REST API endpoint set to ${event.payload.baseUrl} (${event.payload.host}:${event.payload.port})`
           )

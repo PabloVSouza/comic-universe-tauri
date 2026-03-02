@@ -13,6 +13,8 @@ interface SearchResultCardProps {
   isLoadingDetails: boolean
   onAdd: (item: SearchResultItem) => void
   isAdding: boolean
+  addProgress?: number
+  addProgressMessage?: string
   alreadyAdded: boolean
   addLabel: string
   addingLabel: string
@@ -28,6 +30,8 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
   isLoadingDetails,
   onAdd,
   isAdding,
+  addProgress,
+  addProgressMessage,
   alreadyAdded,
   addLabel,
   addingLabel,
@@ -40,15 +44,19 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
 
   return (
     <article
-      className={`relative flex overflow-hidden bg-background/90 transition-all duration-500 ease-in-out supports-backdrop-filter:backdrop-blur-sm ${
-        isExpanded ? 'h-96' : 'h-48 cursor-pointer hover:bg-accent/35'
+      className={`relative flex flex-col-reverse overflow-hidden bg-background/90 transition-all duration-500 ease-in-out supports-backdrop-filter:backdrop-blur-sm sm:flex-row ${
+        isExpanded
+          ? 'min-h-[34rem] sm:h-96'
+          : 'min-h-[23rem] cursor-pointer hover:bg-accent/35 sm:h-48'
       }`}
       onClick={!isExpanded ? onToggle : undefined}
     >
-      <div className="flex min-w-0 flex-1 flex-col items-center justify-center px-4 py-3 text-center">
-        <h3 className="w-full truncate text-2xl">{item.title}</h3>
-        <p className="mt-1 text-xs text-muted-foreground">{item.sourceName || item.pluginName}</p>
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-1">
+      <div className="flex min-w-0 flex-1 flex-col items-start justify-center px-4 py-3 text-left sm:items-center sm:text-center">
+        <h3 className="w-full break-words text-xl leading-tight sm:truncate sm:text-2xl">{item.title}</h3>
+        <p className="mt-1 w-full text-xs text-muted-foreground sm:truncate">
+          {item.sourceName || item.pluginName}
+        </p>
+        <div className="mt-2 flex w-full flex-wrap items-center gap-1 sm:justify-center">
           {item.languages.map((language) => (
             <Badge key={`${item.id}-${language}`} variant="outline" className="text-[10px]">
               {language}
@@ -62,19 +70,38 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
         {isExpanded && (
           <>
             <div className="my-3 h-px w-full bg-border/60" />
-            <p className="w-full overflow-auto text-sm text-foreground/85">
+            <p className="max-h-48 w-full overflow-auto text-sm text-foreground/85 sm:max-h-none">
               {isLoadingDetails ? 'Carregando...' : description}
             </p>
-            <div className="mt-3">
+            <div className="mt-3 w-full sm:w-auto">
               <Button
                 type="button"
                 size="sm"
                 disabled={alreadyAdded || isAdding || isLoadingDetails}
                 onClick={() => onAdd(item)}
-                className={alreadyAdded ? '' : 'bg-yellow-400 text-black hover:bg-yellow-500'}
+                className={`w-full sm:w-auto ${
+                  alreadyAdded ? '' : 'bg-yellow-400 text-black hover:bg-yellow-500'
+                }`}
               >
-                {alreadyAdded ? addedLabel : isAdding ? addingLabel : addLabel}
+                {alreadyAdded
+                  ? addedLabel
+                  : isAdding
+                  ? `${addingLabel} ${Math.max(0, Math.min(100, Math.round(addProgress ?? 0)))}%`
+                  : addLabel}
               </Button>
+              {isAdding ? (
+                <div className="mt-2 w-full space-y-1 sm:max-w-48">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-yellow-400 transition-[width] duration-300"
+                      style={{ width: `${Math.max(4, Math.min(100, Math.round(addProgress ?? 0)))}%` }}
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    {addProgressMessage || addingLabel}
+                  </p>
+                </div>
+              ) : null}
             </div>
           </>
         )}
@@ -83,7 +110,7 @@ export const SearchResultCard: FC<SearchResultCardProps> = ({
       <img
         src={cover}
         alt={item.title}
-        className="h-full w-auto shrink-0 object-cover aspect-[10/16]"
+        className="mx-auto mt-4 aspect-[10/16] h-56 w-auto shrink-0 rounded-sm object-cover sm:mx-0 sm:mt-0 sm:h-full"
         loading="lazy"
       />
 

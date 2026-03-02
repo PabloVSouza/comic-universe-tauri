@@ -9,16 +9,15 @@ import {
 } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from 'components/ui/table'
-import { restQueryKeys, useMarkChaptersReadStateMutation } from 'services'
-import type { ChapterData, DbRecord } from 'services'
+import { dbDelete, dbFind, dbUpsert, restQueryKeys, type ResolvedChapterRecord } from 'services'
 import { cn } from 'utils'
 import { MainContentChapterTableBulkActions } from './MainContentChapterTableBulkActions'
 import { buildChapterColumns } from './MainContentChapterTableColumns'
 import { type ChapterRowModel, mapChapterToRow } from './MainContentChapterTableModel'
 
 interface MainContentChapterTableProps {
-  comicId: string
-  chapters: Array<DbRecord<ChapterData>>
+  entityId: string
+  chapters: Array<ResolvedChapterRecord>
   progressByChapterId: Map<string, number>
   selectedIds: Set<string>
   setSelectedIds: Dispatch<SetStateAction<Set<string>>>
@@ -32,7 +31,7 @@ const LOAD_MORE_STEP = 60
 const SCROLL_THRESHOLD_PX = 240
 
 export const MainContentChapterTable = ({
-  comicId,
+  entityId,
   chapters,
   progressByChapterId,
   selectedIds,
@@ -43,7 +42,7 @@ export const MainContentChapterTable = ({
 }: MainContentChapterTableProps) => {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const markMutation = useMarkChaptersReadStateMutation()
+  const [isUpdatingReadState, setIsUpdatingReadState] = useState(false)
   const [sorting, setSorting] = useState<SortingState>([{ id: 'chapterNumber', desc: false }])
   const [visibleRowCount, setVisibleRowCount] = useState(INITIAL_VISIBLE_ROWS)
   const [isMobileViewport, setIsMobileViewport] = useState(false)
@@ -57,32 +56,56 @@ export const MainContentChapterTable = ({
   const hasSelection = selectedIds.size > 0
   const showSelectionColumn = isSelectionMode || hasSelection
 
-  const updateReadState = useCallback((chapterIds: string[], read: boolean) => {
+  const updateReadState = useCallback(async (chapterIds: string[], read: boolean) => {
     if (!chapterIds.length) return
-    markMutation.mutate(
-      { chapterIds, read },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: restQueryKeys.chaptersByComicId(comicId) })
-          queryClient.invalidateQueries({
-            queryKey: restQueryKeys.dbFind('read_progress', 'comicId', comicId, 5000)
+    setIsUpdatingReadState(true)
+    try {
+      if (read) {
+        await Promise.all(
+          chapterIds.map((chapterId) =>
+            dbUpsert(
+              'read_progress',
+              {
+                chapterId,
+                comicId: entityId,
+                page: 100,
+                totalPages: 100
+              },
+              chapterId
+            )
+          )
+        )
+      } else {
+        await Promise.all(
+          chapterIds.map(async (chapterId) => {
+            const existing = await dbFind('read_progress', 'chapterId', chapterId, 1)
+            const recordId = existing[0]?.id
+            if (recordId) {
+              await dbDelete('read_progress', recordId)
+            }
           })
-          setSelectedIds((current) => {
-            const next = new Set(current)
-            chapterIds.forEach((id) => next.delete(id))
-            return next
-          })
-        }
+        )
       }
-    )
-  }, [comicId, markMutation, queryClient, setSelectedIds])
 
-  const runBulkReadStateUpdate = useCallback((read: boolean) => {
+      queryClient.invalidateQueries({
+        queryKey: restQueryKeys.dbFind('read_progress', 'comicId', entityId, 5000)
+      })
+      setSelectedIds((current) => {
+        const next = new Set(current)
+        chapterIds.forEach((id) => next.delete(id))
+        return next
+      })
+    } finally {
+      setIsUpdatingReadState(false)
+    }
+  }, [entityId, queryClient, setSelectedIds])
+
+  const runBulkReadStateUpdate = useCallback(async (read: boolean) => {
     if (!selectedIdList.length) return
     const targetIds = [...selectedIdList]
     setSelectedIds(new Set())
     onExitSelectionMode()
-    updateReadState(targetIds, read)
+    await updateReadState(targetIds, read)
   }, [onExitSelectionMode, selectedIdList, setSelectedIds, updateReadState])
 
   const columns = useMemo(
@@ -115,7 +138,7 @@ export const MainContentChapterTable = ({
 
   useEffect(() => {
     setVisibleRowCount(INITIAL_VISIBLE_ROWS)
-  }, [comicId, sorting, rows.length])
+  }, [entityId, sorting, rows.length])
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 768px)')
@@ -168,13 +191,13 @@ export const MainContentChapterTable = ({
       >
         <MainContentChapterTableBulkActions
           selectedCount={selectedIds.size}
-          isUpdating={markMutation.isPending}
+          isUpdating={isUpdatingReadState}
           clearSelection={() => {
             setSelectedIds(new Set())
             onExitSelectionMode()
           }}
-          markSelectedRead={() => runBulkReadStateUpdate(true)}
-          markSelectedUnread={() => runBulkReadStateUpdate(false)}
+          markSelectedRead={() => void runBulkReadStateUpdate(true)}
+          markSelectedUnread={() => void runBulkReadStateUpdate(false)}
           t={t}
         />
       </div>

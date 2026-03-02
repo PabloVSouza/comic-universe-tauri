@@ -1,12 +1,16 @@
 import { ComponentProps, FC, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import i18n from 'i18n'
 import { BgBox } from 'components'
-import type { ComicData } from 'services'
 import {
-  getComicCoverUrl,
+  type CanonicalChapterData,
+  type ChapterMappingData,
+  type ChapterVariantData,
+  type WorkData,
+  resolveChapterVariants,
   useDbFindQuery,
-  useListChaptersByComicIdQuery,
-  useListComicsQuery
+  useDbListQuery,
+  useDbUpsertMutation
 } from 'services'
 import { cn } from 'utils'
 import { MainContentHeader } from './MainContentHeader'
@@ -14,11 +18,24 @@ import { MainContentNav } from './MainContentNav'
 import { MainContentChapterTable } from './MainContentChapterTable'
 
 interface MainContentProps extends ComponentProps<'div'> {
-  selectedComicId?: string | null
+  selectedWorkId?: string | null
 }
 
 const normalizeText = (value: unknown): string | undefined => {
   return typeof value === 'string' && value.trim().length ? value : undefined
+}
+
+const AUTO_LANGUAGE_MODE = '__auto__'
+
+const normalizeLanguageCode = (value: unknown): string => {
+  if (typeof value !== 'string') return ''
+  return value.trim().toLowerCase().replace(/_/g, '-')
+}
+
+const preferredUiLanguageCodes = (): string[] => {
+  const resolved = normalizeLanguageCode(i18n.resolvedLanguage || i18n.language || 'en')
+  const base = resolved.split('-')[0]
+  return Array.from(new Set([resolved, base].filter(Boolean)))
 }
 
 interface ReadProgressData {
@@ -27,6 +44,13 @@ interface ReadProgressData {
   page?: number
   totalPages?: number
   [key: string]: unknown
+}
+
+const chapterLanguageModeFromSettings = (work?: { data?: WorkData } | null): string => {
+  const settings = work?.data?.settings as Record<string, unknown> | undefined
+  const raw = typeof settings?.chapterLanguageMode === 'string' ? settings.chapterLanguageMode : ''
+  if (raw.trim() === AUTO_LANGUAGE_MODE) return AUTO_LANGUAGE_MODE
+  return normalizeLanguageCode(raw) || AUTO_LANGUAGE_MODE
 }
 
 const progressPercentFromReadProgress = (readProgress?: ReadProgressData): number => {
@@ -38,58 +62,178 @@ const progressPercentFromReadProgress = (readProgress?: ReadProgressData): numbe
   return Math.max(0, Math.min(100, Math.round((safePage / totalPages) * 100)))
 }
 
-const chapterNumberSortValue = (raw: unknown): number | null => {
-  if (typeof raw !== 'string') return null
-  const normalized = raw.trim().replace(',', '.')
-  if (!normalized) return null
-  const direct = Number(normalized)
-  if (Number.isFinite(direct)) return direct
-  const match = normalized.match(/-?\d+(?:\.\d+)?/)
-  if (!match) return null
-  const parsed = Number(match[0])
-  return Number.isFinite(parsed) ? parsed : null
-}
-
 export const MainContent: FC<MainContentProps> = ({
   className,
-  selectedComicId,
+  selectedWorkId,
   ...props
 }) => {
   const navigate = useNavigate()
-  const comicsQuery = useListComicsQuery()
-  const chaptersQuery = useListChaptersByComicIdQuery(selectedComicId)
+  const worksQuery = useDbListQuery<WorkData>('works', 500, 0)
+  const upsertWorkMutation = useDbUpsertMutation<WorkData>()
+  const canonicalChaptersQuery = useDbFindQuery<CanonicalChapterData>(
+    'canonical_chapters',
+    'workId',
+    selectedWorkId ?? '',
+    5000,
+    Boolean(selectedWorkId)
+  )
+  const chapterVariantsQuery = useDbFindQuery<ChapterVariantData>(
+    'chapter_variants',
+    'workId',
+    selectedWorkId ?? '',
+    5000,
+    Boolean(selectedWorkId)
+  )
+  const chapterMappingsQuery = useDbFindQuery<ChapterMappingData>(
+    'chapter_mappings',
+    'workId',
+    selectedWorkId ?? '',
+    5000,
+    Boolean(selectedWorkId)
+  )
   const readProgressQuery = useDbFindQuery<ReadProgressData>(
     'read_progress',
     'comicId',
-    selectedComicId ?? '',
+    selectedWorkId ?? '',
     5000,
-    Boolean(selectedComicId)
+    Boolean(selectedWorkId)
   )
   const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set())
   const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedChapterLanguage, setSelectedChapterLanguage] = useState<string>(AUTO_LANGUAGE_MODE)
 
-  const selectedComic = useMemo(
-    () => comicsQuery.data?.find((comic) => comic.id === selectedComicId) ?? null,
-    [comicsQuery.data, selectedComicId]
+  const selectedWork = useMemo(
+    () => worksQuery.data?.find((work) => work.id === selectedWorkId) ?? null,
+    [worksQuery.data, selectedWorkId]
   )
 
-  const chapters = chaptersQuery.data ?? []
-  const deferredChapters = useDeferredValue(chapters)
-  const hasSelectedChapters = selectedChapterIds.size > 0
-  const sortedChapters = useMemo(() => {
-    const items = [...deferredChapters]
-    items.sort((a, b) => {
-      const av = chapterNumberSortValue(a.data.number)
-      const bv = chapterNumberSortValue(b.data.number)
-      if (av !== null && bv !== null && av !== bv) return av - bv
-      if (av !== null && bv === null) return -1
-      if (av === null && bv !== null) return 1
-      const aNum = typeof a.data.number === 'string' ? a.data.number : ''
-      const bNum = typeof b.data.number === 'string' ? b.data.number : ''
-      return aNum.localeCompare(bNum, undefined, { numeric: true, sensitivity: 'base' })
+  const availableChapterLanguages = useMemo(() => {
+    const languages = new Set<string>()
+    for (const variant of chapterVariantsQuery.data ?? []) {
+      const raw = Array.isArray(variant.data.languageCodes) ? variant.data.languageCodes : []
+      for (const entry of raw) {
+        const normalized = normalizeLanguageCode(entry)
+        if (normalized) languages.add(normalized)
+      }
+      const direct = normalizeLanguageCode(variant.data.language)
+      if (direct) languages.add(direct)
+    }
+    return [...languages].sort((left, right) => left.localeCompare(right))
+  }, [chapterVariantsQuery.data])
+
+  useEffect(() => {
+    const savedMode = chapterLanguageModeFromSettings(selectedWork)
+    const savedLanguageAvailable =
+      savedMode === AUTO_LANGUAGE_MODE || availableChapterLanguages.includes(savedMode)
+
+    if (availableChapterLanguages.length <= 1) {
+      const onlyLanguage = availableChapterLanguages[0]
+      if (onlyLanguage) {
+        setSelectedChapterLanguage(savedLanguageAvailable && savedMode !== AUTO_LANGUAGE_MODE ? savedMode : onlyLanguage)
+        return
+      }
+
+      setSelectedChapterLanguage(AUTO_LANGUAGE_MODE)
+      return
+    }
+
+    setSelectedChapterLanguage(() => {
+      if (savedLanguageAvailable) {
+        return savedMode
+      }
+      return AUTO_LANGUAGE_MODE
     })
-    return items
-  }, [deferredChapters])
+  }, [availableChapterLanguages, selectedWork, selectedWorkId])
+
+  useEffect(() => {
+    if (!selectedWork) return
+
+    const savedMode = chapterLanguageModeFromSettings(selectedWork)
+    const nextMode =
+      selectedChapterLanguage && selectedChapterLanguage !== AUTO_LANGUAGE_MODE
+        ? normalizeLanguageCode(selectedChapterLanguage)
+        : AUTO_LANGUAGE_MODE
+
+    if (savedMode === nextMode) return
+
+    void upsertWorkMutation
+      .mutateAsync({
+        table: 'works',
+        id: selectedWork.id,
+        data: {
+          ...(selectedWork.data as WorkData),
+          settings: {
+            ...(selectedWork.data.settings as Record<string, unknown> | undefined),
+            chapterLanguageMode: nextMode
+          }
+        }
+      })
+      .then(() => {
+        void worksQuery.refetch()
+      })
+  }, [selectedChapterLanguage, selectedWork, upsertWorkMutation, worksQuery.refetch])
+
+  const chapterLanguagePriority = useMemo(() => {
+    if (selectedChapterLanguage !== AUTO_LANGUAGE_MODE) {
+      return selectedChapterLanguage ? [selectedChapterLanguage] : []
+    }
+
+    const appPreferred = preferredUiLanguageCodes()
+    const englishPreferred = ['en']
+    const remaining = availableChapterLanguages.filter((language) => {
+      const normalized = normalizeLanguageCode(language)
+      return !appPreferred.includes(normalized) && normalized !== 'en'
+    })
+
+    return Array.from(new Set([...appPreferred, ...englishPreferred, ...remaining]))
+  }, [availableChapterLanguages, selectedChapterLanguage])
+
+  const strictLanguageFilter = selectedChapterLanguage !== AUTO_LANGUAGE_MODE
+
+  const chapters = useMemo(
+    () =>
+      resolveChapterVariants(
+        canonicalChaptersQuery.data ?? [],
+        chapterMappingsQuery.data ?? [],
+        chapterVariantsQuery.data ?? [],
+        chapterLanguagePriority,
+        strictLanguageFilter
+      ),
+    [
+      canonicalChaptersQuery.data,
+      chapterLanguagePriority,
+      chapterMappingsQuery.data,
+      chapterVariantsQuery.data,
+      strictLanguageFilter
+    ]
+  )
+  const chapterCountHint = useMemo(() => {
+    const raw = selectedWork?.data?.chapterCount
+    return typeof raw === 'number' && Number.isFinite(raw) && raw > 0 ? raw : 0
+  }, [selectedWork?.data?.chapterCount])
+
+  const chaptersWithFallback = useMemo(() => {
+    const hasImportedVariants = (chapterVariantsQuery.data?.length ?? 0) > 0
+    if (chapters.length > 0 || !selectedWorkId || chapterCountHint <= 0 || hasImportedVariants) return chapters
+
+    return Array.from({ length: chapterCountHint }, (_, index) => {
+      const number = String(index + 1)
+      return {
+        id: `placeholder:${selectedWorkId}:${number}`,
+        created_at: '',
+        updated_at: '',
+        data: {
+          canonicalChapterId: `placeholder:${selectedWorkId}:${number}`,
+          number,
+          name: `Chapter ${number}`,
+          pages: [],
+          isPlaceholder: true
+        }
+      }
+    })
+  }, [chapterCountHint, chapterVariantsQuery.data?.length, chapters, selectedWorkId])
+  const deferredChapters = useDeferredValue(chaptersWithFallback)
+  const hasSelectedChapters = selectedChapterIds.size > 0
 
   const readProgressByChapterId = useMemo(() => {
     const map = new Map<string, number>()
@@ -101,29 +245,43 @@ export const MainContent: FC<MainContentProps> = ({
     return map
   }, [readProgressQuery.data])
 
-  const preferredReaderChapterId = useMemo(() => {
-    const lastChapterWithProgress = [...sortedChapters]
-      .reverse()
-      .find((chapter) => (readProgressByChapterId.get(chapter.id) ?? 0) > 0)
+  const progressForChapter = useMemo(
+    () => (chapter: (typeof deferredChapters)[number]): number => {
+      const chapterData = chapter.data as Record<string, unknown>
+      const variantChapterId =
+        typeof chapterData.variantChapterId === 'string' ? chapterData.variantChapterId : ''
+      return (
+        readProgressByChapterId.get(chapter.id) ??
+        (variantChapterId ? readProgressByChapterId.get(variantChapterId) : undefined) ??
+        0
+      )
+    },
+    [readProgressByChapterId]
+  )
 
-    return lastChapterWithProgress?.id ?? sortedChapters[0]?.id ?? null
-  }, [sortedChapters, readProgressByChapterId])
+  const preferredReaderChapterId = useMemo(() => {
+    const lastChapterWithProgress = [...deferredChapters]
+      .reverse()
+      .find((chapter) => progressForChapter(chapter) > 0)
+
+    return lastChapterWithProgress?.id ?? deferredChapters[0]?.id ?? null
+  }, [deferredChapters, progressForChapter])
 
   const totalProgress = useMemo(() => {
     if (!deferredChapters.length) return 0
     const total = deferredChapters.reduce(
-      (sum, chapter) => sum + (readProgressByChapterId.get(chapter.id) ?? 0),
+      (sum, chapter) => sum + progressForChapter(chapter),
       0
     )
     return Math.round(total / deferredChapters.length)
-  }, [deferredChapters, readProgressByChapterId])
+  }, [deferredChapters, progressForChapter])
 
   useEffect(() => {
     setSelectedChapterIds(new Set())
     setIsSelectionMode(false)
-  }, [selectedComicId])
+  }, [selectedWorkId])
 
-  if (!selectedComicId) {
+  if (!selectedWorkId) {
     return (
       <BgBox className={cn('relative min-h-0 overflow-auto p-4', className)} {...props}>
         <div className="rounded-md border border-border/50 bg-background p-3 text-sm text-muted-foreground">
@@ -133,12 +291,12 @@ export const MainContent: FC<MainContentProps> = ({
     )
   }
 
-  const comicData = (selectedComic?.data ?? {}) as ComicData
-  const title = normalizeText(comicData.name) || selectedComicId
-  const publisher = normalizeText((comicData as Record<string, unknown>).publisher)
-  const status = normalizeText((comicData as Record<string, unknown>).status) || 'Unknown'
-  const synopsis = normalizeText(comicData.synopsis)
-  const coverUrl = selectedComic ? getComicCoverUrl(selectedComic.id) : undefined
+  const workData = (selectedWork?.data ?? {}) as WorkData
+  const title = normalizeText(workData.title) || normalizeText(workData.name) || selectedWorkId
+  const publisher = normalizeText(workData.publisher)
+  const status = normalizeText(workData.status) || 'Unknown'
+  const synopsis = normalizeText(workData.description) || normalizeText(workData.synopsis)
+  const coverUrl = normalizeText(workData.cover)
   const showSelectionMode = isSelectionMode || hasSelectedChapters
 
   return (
@@ -156,6 +314,10 @@ export const MainContent: FC<MainContentProps> = ({
         />
         <MainContentNav
           totalProgress={totalProgress}
+          availableChapterLanguages={availableChapterLanguages}
+          selectedChapterLanguage={selectedChapterLanguage}
+          autoLanguageMode={AUTO_LANGUAGE_MODE}
+          onSelectChapterLanguage={setSelectedChapterLanguage}
           isSelectionMode={showSelectionMode}
           onToggleSelectionMode={() => {
             if (showSelectionMode) {
@@ -166,20 +328,20 @@ export const MainContent: FC<MainContentProps> = ({
             setIsSelectionMode(true)
           }}
           onRead={() => {
-            if (!selectedComicId || !preferredReaderChapterId) return
-            navigate(`/reader/${selectedComicId}/${preferredReaderChapterId}`)
+            if (!selectedWorkId || !preferredReaderChapterId) return
+            navigate(`/reader/${selectedWorkId}/${preferredReaderChapterId}`)
           }}
           readDisabled={!preferredReaderChapterId}
         />
         <MainContentChapterTable
-          comicId={selectedComicId}
+          entityId={selectedWorkId}
           chapters={deferredChapters}
           progressByChapterId={readProgressByChapterId}
           selectedIds={selectedChapterIds}
           setSelectedIds={setSelectedChapterIds}
           isSelectionMode={showSelectionMode}
           onExitSelectionMode={() => setIsSelectionMode(false)}
-          onOpenChapter={(chapterId) => navigate(`/reader/${selectedComicId}/${chapterId}`)}
+          onOpenChapter={(chapterId) => navigate(`/reader/${selectedWorkId}/${chapterId}`)}
         />
       </div>
     </BgBox>

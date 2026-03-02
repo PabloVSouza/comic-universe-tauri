@@ -1,8 +1,10 @@
 import { FC, useCallback, useEffect, useRef, useState } from 'react'
 import { useOpenWindow } from '@pablovsouza/react-window-manager'
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from 'stores'
 import {
   useAccountSessionQuery,
+  useApiHealthQuery,
   useClearAccountSessionMutation,
   useSaveAccountSessionMutation,
   useWebsiteGenerateAppTokenMutation,
@@ -11,7 +13,8 @@ import {
 import { LeftList, LeftNav, MainContent, TopBar } from 'components'
 
 export const Home: FC = () => {
-  const [selectedComicId, setSelectedComicId] = useState<string | null>(null)
+  const { t } = useTranslation()
+  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null)
   const [isMobileListVisible, setMobileListVisible] = useState(false)
   const account = useAppStore((state) => state.account)
   const accountHydrated = useAppStore((state) => state.accountHydrated)
@@ -21,6 +24,7 @@ export const Home: FC = () => {
   const isMobileListOpen = useAppStore((state) => state.isMobileListOpen)
   const setMobileListOpen = useAppStore((state) => state.setMobileListOpen)
   const openWindow = useOpenWindow()
+  const apiHealthQuery = useApiHealthQuery()
   const accountSessionQuery = useAccountSessionQuery()
   const { mutate: saveAccountSession } = useSaveAccountSessionMutation()
   const { mutate: clearAccountSession } = useClearAccountSessionMutation()
@@ -46,16 +50,89 @@ export const Home: FC = () => {
   }, [openWindow])
 
   useEffect(() => {
-    if (!accountHydrated && accountSessionQuery.isFetched) {
+    if (!accountHydrated && apiHealthQuery.isSuccess && accountSessionQuery.isSuccess) {
       hydrateAccount(accountSessionQuery.data ?? null)
     }
-  }, [accountHydrated, accountSessionQuery.data, accountSessionQuery.isFetched, hydrateAccount])
+  }, [
+    accountHydrated,
+    apiHealthQuery.isSuccess,
+    accountSessionQuery.data,
+    accountSessionQuery.isSuccess,
+    hydrateAccount
+  ])
+
+  useEffect(() => {
+    if (
+      accountHydrated ||
+      !apiHealthQuery.isSuccess ||
+      !accountSessionQuery.isError ||
+      accountSessionQuery.fetchStatus !== 'idle'
+    ) {
+      return
+    }
+
+    void accountSessionQuery.refetch()
+  }, [
+    accountHydrated,
+    apiHealthQuery.isSuccess,
+    accountSessionQuery.fetchStatus,
+    accountSessionQuery.isError,
+    accountSessionQuery.refetch
+  ])
+
+  useEffect(() => {
+    if (
+      accountHydrated ||
+      apiHealthQuery.isSuccess ||
+      apiHealthQuery.fetchStatus !== 'idle'
+    ) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void apiHealthQuery.refetch()
+    }, 1000)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    accountHydrated,
+    apiHealthQuery.fetchStatus,
+    apiHealthQuery.isSuccess,
+    apiHealthQuery.refetch
+  ])
+
+  useEffect(() => {
+    if (
+      accountHydrated ||
+      !apiHealthQuery.isSuccess ||
+      accountSessionQuery.isSuccess ||
+      accountSessionQuery.fetchStatus !== 'idle'
+    ) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void accountSessionQuery.refetch()
+    }, 1000)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [
+    accountHydrated,
+    apiHealthQuery.isSuccess,
+    accountSessionQuery.fetchStatus,
+    accountSessionQuery.isSuccess,
+    accountSessionQuery.refetch
+  ])
 
   useEffect(() => {
     let cancelled = false
     let openFrame = 0
 
-    if (!accountHydrated) {
+    if (!accountHydrated || !apiHealthQuery.isSuccess) {
       return () => {
         cancelled = true
         if (openFrame) {
@@ -160,7 +237,8 @@ export const Home: FC = () => {
     logout,
     clearAccountSession,
     saveAccountSession,
-    hydrateAccount
+    hydrateAccount,
+    apiHealthQuery.isSuccess
   ])
 
   // const { wallpaper, setWallpaper } = useAppStore()
@@ -203,6 +281,14 @@ export const Home: FC = () => {
     }
   }, [isMobileListOpen, mobileListAnimationMs])
 
+  if (!accountHydrated) {
+    return (
+      <div className="grid size-full place-items-center bg-background px-4 text-center text-sm text-foreground/70">
+        {t('app.connectingBackend')}
+      </div>
+    )
+  }
+
   return (
     <>
       <div className="grid size-full grid-cols-1 grid-rows-[3.5rem_minmax(0,1fr)] gap-px md:grid-cols-[15rem_minmax(0,1fr)] md:grid-rows-[3.5rem_3.5rem_minmax(0,1fr)]">
@@ -212,12 +298,12 @@ export const Home: FC = () => {
         />
         <LeftList
           className="hidden md:block md:col-start-1 md:row-start-3"
-          selectedComicId={selectedComicId}
-          onSelectComic={setSelectedComicId}
+          selectedWorkId={selectedWorkId}
+          onSelectWork={setSelectedWorkId}
         />
         <MainContent
           className="col-start-1 row-start-2 md:col-start-2 md:row-start-2 md:row-span-2"
-          selectedComicId={selectedComicId}
+          selectedWorkId={selectedWorkId}
         />
       </div>
 
@@ -244,9 +330,9 @@ export const Home: FC = () => {
             <LeftNav className="row-start-1" />
             <LeftList
               className="row-start-2 min-h-0"
-              selectedComicId={selectedComicId}
-              onSelectComic={(comicId) => {
-                setSelectedComicId(comicId)
+              selectedWorkId={selectedWorkId}
+              onSelectWork={(workId) => {
+                setSelectedWorkId(workId)
                 setMobileListOpen(false)
               }}
             />

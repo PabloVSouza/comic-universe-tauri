@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { BookOpenCheck, CheckSquare2, ChevronUp, Square, Undo2 } from 'lucide-react'
+import { Badge } from 'components/ui/badge'
 import { Button } from 'components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from 'components/ui/tooltip'
 import type { ChapterRowModel } from './MainContentChapterTableModel'
@@ -9,7 +10,7 @@ interface BuildChapterColumnsParams {
   selectionColumnVisible: boolean
   selectedIds: Set<string>
   setSelectedIds: Dispatch<SetStateAction<Set<string>>>
-  updateReadState: (chapterIds: string[], read: boolean) => void
+  updateReadState: (chapterIds: string[], read: boolean) => void | Promise<void>
   t: (key: string, options?: Record<string, unknown>) => string
 }
 
@@ -155,7 +156,16 @@ export const buildChapterColumns = ({
       header: () => (
         <div className="px-2 text-xs font-normal">{t('mainContent.chapterTable.headers.name')}</div>
       ),
-      cell: ({ row }) => <div className="truncate px-2">{row.original.chapterName}</div>,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2 px-2">
+          {row.original.chapterLanguage ? (
+            <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px]">
+              {row.original.chapterLanguage}
+            </Badge>
+          ) : null}
+          <div className="min-w-0 truncate">{row.original.chapterName}</div>
+        </div>
+      ),
       enableSorting: false
     },
     {
@@ -181,7 +191,7 @@ export const buildChapterColumns = ({
                 variant="ghost"
                 size="icon-sm"
                 className="h-8 w-8 hover:bg-accent/70"
-                onClick={() => updateReadState([row.original.id], !row.original.isRead)}
+                onClick={() => void updateReadState([row.original.id], !row.original.isRead)}
                 aria-label={
                   row.original.isRead
                     ? t('mainContent.chapterTable.actions.markUnread')

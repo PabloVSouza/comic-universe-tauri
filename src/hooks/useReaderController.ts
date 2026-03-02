@@ -1,15 +1,20 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import i18n from 'i18n'
 import {
-  type ComicData,
-  getChapterPageUrl,
+  type CanonicalChapterData,
+  type ChapterMappingData,
+  type ChapterVariantData,
+  type ResolvedPage,
+  type WorkData,
+  dbUpsert,
+  normalizeChapterPages,
+  resolveChapterVariants,
   restQueryKeys,
-  useChapterPagesQuery,
   useDbFindQuery,
-  useDbUpsertMutation,
-  useListChaptersByComicIdQuery,
-  useListComicsQuery
+  useDbListQuery,
+  useDbUpsertMutation
 } from 'services'
 import { type HorizontalReaderSlide } from 'components/TemplateComponents/Reader'
 
@@ -21,22 +26,183 @@ interface ReadProgressData {
   [key: string]: unknown
 }
 
-const chapterNumberSortValue = (raw: unknown): number | null => {
-  if (typeof raw !== 'string') return null
-  const normalized = raw.trim().replace(',', '.')
-  if (!normalized) return null
-  const direct = Number(normalized)
-  if (Number.isFinite(direct)) return direct
-  const match = normalized.match(/-?\d+(?:\.\d+)?/)
-  if (!match) return null
-  const parsed = Number(match[0])
-  return Number.isFinite(parsed) ? parsed : null
+interface PluginRecordData {
+  endpoint?: string
+  url?: string
+  enabled?: boolean
+  name?: string
+  tag?: string
+  contentTypes?: string[]
+  languageCodes?: string[]
+  capabilities?: string[] | { metadata?: boolean; content?: boolean }
+  sources?: Array<{ id?: string; name?: string; isDefault?: boolean }>
+  [key: string]: unknown
+}
+
+interface InstalledContentPlugin {
+  id: string
+  endpoint: string
+  name: string
+  tag: string
+  languageCodes: string[]
+  sourceId?: string
+  sourceName?: string
+}
+
+interface PluginSearchComic {
+  siteId: string
+  name: string
+}
+
+interface PluginChapter {
+  siteId: string
+  number?: string
+  name?: string
+  language?: string
+  languageCodes?: string[]
+  siteLink?: string
 }
 
 const normalizeImageSrc = (value: string | null | undefined): string | undefined => {
   if (!value) return undefined
   const normalized = value.trim()
   return normalized.length ? normalized : undefined
+}
+
+const AUTO_LANGUAGE_MODE = '__auto__'
+
+const normalizeLanguageCode = (value: string): string => value.trim().toLowerCase().replace(/_/g, '-')
+
+const preferredLanguageCodes = (): string[] => {
+  const resolved = normalizeLanguageCode(i18n.resolvedLanguage || i18n.language || 'en')
+  const base = resolved.split('-')[0]
+  return Array.from(new Set([resolved, base, 'en']))
+}
+
+const chapterLanguageModeFromSettings = (work?: { data?: WorkData } | null): string => {
+  const settings = work?.data?.settings as Record<string, unknown> | undefined
+  const raw = typeof settings?.chapterLanguageMode === 'string' ? settings.chapterLanguageMode : ''
+  if (raw.trim() === AUTO_LANGUAGE_MODE) return AUTO_LANGUAGE_MODE
+  return raw.trim() ? normalizeLanguageCode(raw) : AUTO_LANGUAGE_MODE
+}
+
+const titleToken = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9 ]+/g, '')
+    .trim()
+
+const titleMatchScore = (query: string, title: string): number => {
+  const left = titleToken(query)
+  const right = titleToken(title)
+  if (!left || !right) return 0
+  if (left === right) return 1
+  if (right.includes(left) || left.includes(right)) return 0.92
+
+  const leftTokens = new Set(left.split(' ').filter(Boolean))
+  const rightTokens = new Set(right.split(' ').filter(Boolean))
+  let overlap = 0
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) overlap += 1
+  }
+  const union = new Set([...leftTokens, ...rightTokens]).size
+  return union > 0 ? overlap / union : 0
+}
+
+const chapterNumberToken = (value: unknown): string => {
+  if (typeof value !== 'string') return ''
+  const raw = value.trim().replace(',', '.')
+  if (!raw) return ''
+  const parsed = Number(raw)
+  if (Number.isFinite(parsed)) return String(parsed)
+  const match = raw.match(/-?\d+(?:\.\d+)?/)
+  if (!match) return raw.toLowerCase()
+  return String(Number(match[0]))
+}
+
+const parsePluginCapabilities = (raw: PluginRecordData['capabilities']): { content: boolean } => {
+  if (Array.isArray(raw)) {
+    return { content: raw.map((entry) => entry.toLowerCase()).includes('content') }
+  }
+  if (raw && typeof raw === 'object') {
+    return { content: (raw as { content?: boolean }).content !== false }
+  }
+  return { content: true }
+}
+
+const resolveInstalledContentPlugins = (
+  records: Array<{ id: string; data: PluginRecordData }>
+): InstalledContentPlugin[] => {
+  const plugins: InstalledContentPlugin[] = []
+  for (const record of records) {
+      const endpoint = typeof record.data.endpoint === 'string' ? record.data.endpoint : record.data.url
+      if (!endpoint || typeof endpoint !== 'string') continue
+      if (record.data.enabled === false) continue
+
+      const capabilities = parsePluginCapabilities(record.data.capabilities)
+      if (!capabilities.content) continue
+
+      const contentTypes = Array.isArray(record.data.contentTypes)
+        ? record.data.contentTypes.filter((entry): entry is string => typeof entry === 'string')
+        : []
+      if (contentTypes.length > 0 && !contentTypes.some((type) => ['manga', 'comic'].includes(type))) {
+        continue
+      }
+
+      const defaultSource = record.data.sources?.find((source) => source?.isDefault) || record.data.sources?.[0]
+      plugins.push({
+        id: record.id,
+        endpoint: endpoint.replace(/\/+$/, ''),
+        name: record.data.name || record.data.tag || record.id,
+        tag: record.data.tag || record.id,
+        languageCodes: Array.isArray(record.data.languageCodes)
+          ? record.data.languageCodes.filter((entry): entry is string => typeof entry === 'string')
+          : [],
+        sourceId: defaultSource?.id,
+        sourceName: defaultSource?.name
+      })
+  }
+  return plugins
+}
+
+const parseFetchedPages = (raw: unknown): Array<Record<string, unknown>> => {
+  if (!Array.isArray(raw)) return []
+  const pages: Array<Record<string, unknown>> = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const item = entry as Record<string, unknown>
+    const urlRaw =
+      (typeof item.url === 'string' && item.url) ||
+      (typeof item.path === 'string' && item.path) ||
+      (typeof item.src === 'string' && item.src) ||
+      ''
+    const url = urlRaw.trim()
+    if (!url) continue
+    const fileNameRaw =
+      (typeof item.fileName === 'string' && item.fileName) ||
+      (typeof item.filename === 'string' && item.filename) ||
+      (typeof item.name === 'string' && item.name) ||
+      'page'
+    pages.push({ url, fileName: fileNameRaw.trim() || 'page' })
+  }
+  return pages
+}
+
+const postPlugin = async <T>(
+  endpoint: string,
+  path: string,
+  body: Record<string, unknown>
+): Promise<T> => {
+  const response = await fetch(`${endpoint}/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  if (!response.ok) {
+    throw new Error(`Plugin request failed (${response.status}) at ${path}`)
+  }
+  return (await response.json()) as T
 }
 
 export const useReaderController = () => {
@@ -58,6 +224,8 @@ export const useReaderController = () => {
   const [verticalScrollContainerNode, setVerticalScrollContainerNode] =
     useState<HTMLDivElement | null>(null)
   const [pageAspectMap, setPageAspectMap] = useState<Record<number, 'portrait' | 'landscape'>>({})
+  const [isResolvingPages, setIsResolvingPages] = useState(false)
+  const [pageResolveError, setPageResolveError] = useState(false)
 
   const mainContainerRef = useRef<HTMLDivElement>(null)
   const verticalPageRefs = useRef<Array<HTMLDivElement | null>>([])
@@ -70,10 +238,31 @@ export const useReaderController = () => {
   const lastPersistedRef = useRef<{ chapterId: string; page: number } | null>(null)
   const verticalScrollDebounceRef = useRef<number | null>(null)
   const desktopControlsHideTimeoutRef = useRef<number | null>(null)
+  const triedPageResolveChapterIdsRef = useRef<Set<string>>(new Set())
 
-  const comicsQuery = useListComicsQuery()
-  const chaptersQuery = useListChaptersByComicIdQuery(comicId)
-  const chapterPagesQuery = useChapterPagesQuery(chapterId)
+  const worksQuery = useDbListQuery<WorkData>('works', 500, 0)
+  const pluginsQuery = useDbListQuery<PluginRecordData>('plugins', 500, 0)
+  const canonicalChaptersQuery = useDbFindQuery<CanonicalChapterData>(
+    'canonical_chapters',
+    'workId',
+    comicId ?? '',
+    5000,
+    Boolean(comicId)
+  )
+  const chapterVariantsQuery = useDbFindQuery<ChapterVariantData>(
+    'chapter_variants',
+    'workId',
+    comicId ?? '',
+    5000,
+    Boolean(comicId)
+  )
+  const chapterMappingsQuery = useDbFindQuery<ChapterMappingData>(
+    'chapter_mappings',
+    'workId',
+    comicId ?? '',
+    5000,
+    Boolean(comicId)
+  )
   const readProgressQuery = useDbFindQuery<ReadProgressData>(
     'read_progress',
     'chapterId',
@@ -82,7 +271,7 @@ export const useReaderController = () => {
     Boolean(chapterId)
   )
   const upsertReadProgressMutation = useDbUpsertMutation<ReadProgressData>()
-  const upsertComicMutation = useDbUpsertMutation<ComicData>()
+  const upsertWorkMutation = useDbUpsertMutation<WorkData>()
 
   const setHorizontalViewportRef = useCallback((node: HTMLDivElement | null) => {
     setHorizontalViewportNode(node)
@@ -133,33 +322,127 @@ export const useReaderController = () => {
     }
   }, [])
 
-  const comic = useMemo(
-    () => comicsQuery.data?.find((record) => record.id === comicId) ?? null,
-    [comicsQuery.data, comicId]
+  const work = useMemo(
+    () => worksQuery.data?.find((record) => record.id === comicId) ?? null,
+    [worksQuery.data, comicId]
   )
 
-  const chapters = useMemo(() => {
-    const items = [...(chaptersQuery.data ?? [])]
-    items.sort((a, b) => {
-      const av = chapterNumberSortValue(a.data.number)
-      const bv = chapterNumberSortValue(b.data.number)
-      if (av !== null && bv !== null && av !== bv) return av - bv
-      if (av !== null && bv === null) return -1
-      if (av === null && bv !== null) return 1
-      const aNum = typeof a.data.number === 'string' ? a.data.number : ''
-      const bNum = typeof b.data.number === 'string' ? b.data.number : ''
-      return aNum.localeCompare(bNum, undefined, { numeric: true, sensitivity: 'base' })
+  const availableChapterLanguages = useMemo(() => {
+    const languages = new Set<string>()
+    for (const variant of chapterVariantsQuery.data ?? []) {
+      const languageCodes = Array.isArray(variant.data.languageCodes) ? variant.data.languageCodes : []
+      for (const entry of languageCodes) {
+        if (typeof entry !== "string") continue
+        const normalized = normalizeLanguageCode(entry)
+        if (normalized) languages.add(normalized)
+      }
+
+      if (typeof variant.data.language === 'string') {
+        const normalized = normalizeLanguageCode(variant.data.language)
+        if (normalized) languages.add(normalized)
+      }
+    }
+
+    return [...languages].sort((left, right) => left.localeCompare(right))
+  }, [chapterVariantsQuery.data])
+
+  const selectedChapterLanguage = useMemo(() => {
+    const savedMode = chapterLanguageModeFromSettings(work)
+    if (savedMode === AUTO_LANGUAGE_MODE) return AUTO_LANGUAGE_MODE
+    return availableChapterLanguages.includes(savedMode) ? savedMode : AUTO_LANGUAGE_MODE
+  }, [availableChapterLanguages, work])
+
+  const chapterLanguagePriority = useMemo(() => {
+    if (selectedChapterLanguage !== AUTO_LANGUAGE_MODE) {
+      return selectedChapterLanguage ? [selectedChapterLanguage] : []
+    }
+
+    const appPreferred = preferredLanguageCodes()
+    const remaining = availableChapterLanguages.filter((language) => {
+      const normalized = normalizeLanguageCode(language)
+      return !appPreferred.includes(normalized)
     })
-    return items
-  }, [chaptersQuery.data])
+
+    return Array.from(new Set([...appPreferred, ...remaining]))
+  }, [availableChapterLanguages, selectedChapterLanguage])
+
+  const strictLanguageFilter = selectedChapterLanguage !== AUTO_LANGUAGE_MODE
+
+  const chapters = useMemo(
+    () =>
+      resolveChapterVariants(
+        canonicalChaptersQuery.data ?? [],
+        chapterMappingsQuery.data ?? [],
+        chapterVariantsQuery.data ?? [],
+        chapterLanguagePriority,
+        strictLanguageFilter
+      ),
+    [
+      canonicalChaptersQuery.data,
+      chapterMappingsQuery.data,
+      chapterVariantsQuery.data,
+      chapterLanguagePriority,
+      strictLanguageFilter
+    ]
+  )
 
   const chapterIndex = useMemo(
-    () => chapters.findIndex((chapter) => chapter.id === chapterId),
+    () =>
+      chapters.findIndex((chapter) => {
+        if (chapter.id === chapterId) return true
+        return chapter.data.variantChapterId === chapterId
+      }),
     [chapters, chapterId]
   )
 
-  const pages = chapterPagesQuery.data?.pages ?? []
+  const currentChapter = chapterIndex >= 0 ? chapters[chapterIndex] : null
+  const currentVariantChapterId =
+    typeof currentChapter?.data.variantChapterId === 'string' ? currentChapter.data.variantChapterId : undefined
+  const pages = useMemo<ResolvedPage[]>(
+    () => normalizeChapterPages(currentChapter?.data.pages),
+    [currentChapter?.id, currentChapter?.data.pages]
+  )
+  const legacyReadProgressQuery = useDbFindQuery<ReadProgressData>(
+    'read_progress',
+    'chapterId',
+    currentVariantChapterId ?? '',
+    1,
+    Boolean(currentVariantChapterId && currentVariantChapterId !== chapterId)
+  )
   const totalPages = pages.length
+
+  const chapterPagesQuery = useMemo(
+    () => ({
+      isLoading:
+        worksQuery.isLoading ||
+        pluginsQuery.isLoading ||
+        canonicalChaptersQuery.isLoading ||
+        chapterMappingsQuery.isLoading ||
+        chapterVariantsQuery.isLoading ||
+        isResolvingPages,
+      isError:
+        worksQuery.isError ||
+        pluginsQuery.isError ||
+        canonicalChaptersQuery.isError ||
+        chapterMappingsQuery.isError ||
+        chapterVariantsQuery.isError ||
+        pageResolveError
+    }),
+    [
+      worksQuery.isLoading,
+      worksQuery.isError,
+      pluginsQuery.isLoading,
+      pluginsQuery.isError,
+      canonicalChaptersQuery.isLoading,
+      canonicalChaptersQuery.isError,
+      chapterMappingsQuery.isLoading,
+      chapterMappingsQuery.isError,
+      chapterVariantsQuery.isLoading,
+      chapterVariantsQuery.isError,
+      isResolvingPages,
+      pageResolveError
+    ]
+  )
 
   const safePage = useMemo(() => {
     const page = readProgress?.page ?? 1
@@ -167,49 +450,43 @@ export const useReaderController = () => {
   }, [readProgress?.page, totalPages])
 
   const chapterName =
-    chapterPagesQuery.data?.chapterName ||
-    (typeof chapters[chapterIndex]?.data.name === 'string' && chapters[chapterIndex]?.data.name) ||
-    (typeof chapters[chapterIndex]?.data.number === 'string' &&
-      chapters[chapterIndex]?.data.number) ||
+    (typeof currentChapter?.data.name === 'string' && currentChapter.data.name) ||
+    (typeof currentChapter?.data.number === 'string' && currentChapter.data.number) ||
     chapterId ||
     '-'
 
-  const comicName = (typeof comic?.data.name === 'string' && comic.data.name) || comicId || 'Reader'
+  const comicName =
+    (typeof work?.data.title === 'string' && work.data.title) ||
+    (typeof work?.data.name === 'string' && work.data.name) ||
+    comicId ||
+    'Reader'
   const canUseDoublePageSpread = doublePageSpread && !isMobileViewport
   const canUseCustomZoom = !isMobileViewport && readingMode === 'horizontal'
 
-  const persistComicSettings = useCallback(
+  const persistWorkSettings = useCallback(
     async (
       nextMode: 'horizontal' | 'vertical',
       nextDirection: 'ltr' | 'rtl',
       nextDoublePageSpread: boolean
     ) => {
-      if (!comic) return
-      const nextData: ComicData = {
-        ...(comic.data as ComicData),
+      if (!work) return
+      const nextData: WorkData = {
+        ...(work.data as WorkData),
         settings: {
-          ...(comic.data.settings as Record<string, unknown> | undefined),
+          ...(work.data.settings as Record<string, unknown> | undefined),
           readingMode: nextMode,
           readingDirection: nextDirection,
           doublePageSpread: nextDoublePageSpread
         }
       }
-      await upsertComicMutation.mutateAsync({
-        table: 'comics',
+      await upsertWorkMutation.mutateAsync({
+        table: 'works',
         data: nextData,
-        id: comic.id
+        id: work.id
       })
-
-      queryClient.setQueryData(restQueryKeys.comics, (current) => {
-        if (!Array.isArray(current)) return current
-        return current.map((item) =>
-          item && typeof item === 'object' && 'id' in item && item.id === comic.id
-            ? { ...item, data: nextData }
-            : item
-        )
-      })
+      queryClient.invalidateQueries({ queryKey: restQueryKeys.dbList('works', 500, 0) })
     },
-    [comic, upsertComicMutation, queryClient]
+    [work, upsertWorkMutation, queryClient]
   )
 
   const persistReadProgress = useCallback(
@@ -224,6 +501,9 @@ export const useReaderController = () => {
         restQueryKeys.dbFind('read_progress', 'chapterId', next.chapterId, 1),
         [persistedReadProgress]
       )
+      void queryClient.invalidateQueries({
+        queryKey: restQueryKeys.dbFind('read_progress', 'comicId', next.comicId, 5000)
+      })
 
       lastPersistedRef.current = { chapterId: next.chapterId, page: next.page }
     },
@@ -241,7 +521,15 @@ export const useReaderController = () => {
   }, [comicId, navigate])
 
   useEffect(() => {
-    const settings = comic?.data?.settings as Record<string, unknown> | undefined
+    if (!comicId || !chapterId || !currentChapter) return
+    if (currentChapter.id === chapterId) return
+    if (currentChapter.data.variantChapterId !== chapterId) return
+
+    navigate(`/reader/${comicId}/${currentChapter.id}`, { replace: true })
+  }, [comicId, chapterId, currentChapter, navigate])
+
+  useEffect(() => {
+    const settings = work?.data?.settings as Record<string, unknown> | undefined
     const savedMode = settings?.readingMode
     const savedDirection = settings?.readingDirection
     const savedDoublePageSpread = settings?.doublePageSpread
@@ -249,7 +537,7 @@ export const useReaderController = () => {
     setReadingMode(savedMode === 'vertical' ? 'vertical' : 'horizontal')
     setReadingDirection(savedDirection === 'rtl' ? 'rtl' : 'ltr')
     setDoublePageSpread(savedDoublePageSpread === true)
-  }, [comic?.id])
+  }, [work?.id])
 
   useEffect(() => {
     setReadProgress(null)
@@ -262,14 +550,225 @@ export const useReaderController = () => {
       verticalScrollDebounceRef.current = null
     }
     setPageAspectMap({})
+    setPageResolveError(false)
+    setIsResolvingPages(false)
   }, [chapterId])
 
   useEffect(() => {
+    if (!chapterId || !comicId || !currentChapter) return
+    if (normalizeChapterPages(currentChapter.data.pages).length > 0) return
+    if (typeof currentChapter.data.siteLink === 'string' && currentChapter.data.siteLink.trim()) return
+    if (triedPageResolveChapterIdsRef.current.has(chapterId)) return
+    if (!work) return
+
+    triedPageResolveChapterIdsRef.current.add(chapterId)
+    setIsResolvingPages(true)
+    setPageResolveError(false)
+
+    const run = async () => {
+      const installedContentPlugins = resolveInstalledContentPlugins(pluginsQuery.data ?? [])
+      if (installedContentPlugins.length === 0) {
+        setPageResolveError(true)
+        setIsResolvingPages(false)
+        return
+      }
+
+      const workTitle =
+        (typeof work.data.title === 'string' && work.data.title) ||
+        (typeof work.data.name === 'string' && work.data.name) ||
+        ''
+      const chapterNumber = chapterNumberToken(currentChapter.data.number)
+      const chapterName = typeof currentChapter.data.name === 'string' ? currentChapter.data.name : ''
+      const preferredLanguages =
+        chapterLanguagePriority.length > 0 ? chapterLanguagePriority : preferredLanguageCodes()
+      const canonicalChapterId =
+        (typeof currentChapter.data.canonicalChapterId === 'string' &&
+          currentChapter.data.canonicalChapterId) ||
+        (canonicalChaptersQuery.data?.some((entry) => entry.id === chapterId) ? chapterId : undefined)
+
+      const candidatePlugins = [...installedContentPlugins].sort((a, b) => {
+        const aLang = a.languageCodes.map(normalizeLanguageCode)
+        const bLang = b.languageCodes.map(normalizeLanguageCode)
+        const aScore = preferredLanguages.some((lang) => aLang.includes(lang)) ? 1 : 0
+        const bScore = preferredLanguages.some((lang) => bLang.includes(lang)) ? 1 : 0
+        return bScore - aScore
+      })
+
+      for (const plugin of candidatePlugins) {
+        let siteId = ''
+        const workSourceSiteId =
+          typeof work.data.sourceSiteId === 'string' ? work.data.sourceSiteId.trim() : ''
+        const workPluginId =
+          typeof work.data.metadataPluginId === 'string' ? work.data.metadataPluginId.trim() : ''
+
+        if (workPluginId === plugin.id && workSourceSiteId) {
+          siteId = workSourceSiteId
+        } else if (workTitle) {
+          try {
+            const searchRows = await postPlugin<PluginSearchComic[]>(plugin.endpoint, 'search', {
+              search: workTitle,
+              languageCodes: preferredLanguages
+            })
+            const best = [...searchRows]
+              .map((row) => ({
+                row,
+                score: titleMatchScore(workTitle, typeof row?.name === 'string' ? row.name : '')
+              }))
+              .filter((entry) => entry.score >= 0.6)
+              .sort((left, right) => right.score - left.score)[0]
+            siteId = typeof best?.row?.siteId === 'string' ? best.row.siteId : ''
+          } catch {
+            siteId = ''
+          }
+        }
+
+        if (!siteId) continue
+
+        let chapters: PluginChapter[] = []
+        try {
+          chapters = await postPlugin<PluginChapter[]>(plugin.endpoint, 'getChapters', {
+            siteId,
+            languageCodes: preferredLanguages
+          })
+        } catch {
+          continue
+        }
+
+        const withSameNumber = chapters.filter((entry) => {
+          const rowNumber = chapterNumberToken(entry?.number)
+          return chapterNumber ? rowNumber === chapterNumber : false
+        })
+        const chapterCandidates = withSameNumber.length > 0 ? withSameNumber : chapters
+
+        const ranked = chapterCandidates
+          .map((entry) => {
+            const chapterLanguages = [
+              ...(Array.isArray(entry.languageCodes) ? entry.languageCodes : []),
+              typeof entry.language === 'string' ? entry.language : ''
+            ]
+              .map(normalizeLanguageCode)
+              .filter(Boolean)
+            const langRank = chapterLanguages.reduce((best, lang) => {
+              const idx = preferredLanguages.findIndex(
+                (preferred) => preferred === lang || preferred === lang.split('-')[0]
+              )
+              return idx >= 0 ? Math.min(best, idx) : best
+            }, Number.MAX_SAFE_INTEGER)
+            const nameScore = titleMatchScore(chapterName, typeof entry.name === 'string' ? entry.name : '')
+            return { entry, langRank, nameScore }
+          })
+          .sort((left, right) => {
+            if (left.langRank !== right.langRank) return left.langRank - right.langRank
+            return right.nameScore - left.nameScore
+          })
+
+        const chapterMatch = ranked[0]?.entry
+        const chapterSiteId = typeof chapterMatch?.siteId === 'string' ? chapterMatch.siteId : ''
+        const chapterSiteLink =
+          typeof chapterMatch?.siteLink === 'string' && chapterMatch.siteLink.trim()
+            ? chapterMatch.siteLink.trim()
+            : null
+        if (!chapterSiteId && !chapterSiteLink) continue
+
+        let pagesRaw: unknown[] = []
+        if (chapterSiteId) {
+          try {
+            pagesRaw = await postPlugin<unknown[]>(plugin.endpoint, 'getPages', {
+              siteId,
+              chapterSiteId,
+              languageCodes: preferredLanguages
+            })
+          } catch {
+            if (!chapterSiteLink) continue
+          }
+        }
+
+        const pages = parseFetchedPages(pagesRaw)
+        if (pages.length === 0 && !chapterSiteLink) continue
+
+        const existingVariant = (chapterVariantsQuery.data ?? []).find((variant) => {
+          const samePlugin = variant.data.pluginId === plugin.id
+          const sameNumber = chapterNumberToken(variant.data.number) === chapterNumber
+          const sameSite = typeof variant.data.siteId === 'string' && variant.data.siteId === chapterSiteId
+          return samePlugin && (sameSite || (chapterNumber && sameNumber))
+        })
+
+        const variantId = existingVariant?.id || `chapter-variant:${comicId}:${plugin.id}:${chapterSiteId}`
+        await dbUpsert(
+          'chapter_variants',
+          {
+            workId: comicId,
+            pluginId: plugin.id,
+            pluginTag: plugin.tag,
+            pluginName: plugin.name,
+            sourceId: plugin.sourceId || null,
+            sourceName: plugin.sourceName || null,
+            siteId: chapterSiteId || null,
+            siteLink: chapterSiteLink,
+            number: (typeof chapterMatch?.number === 'string' && chapterMatch.number) || currentChapter.data.number || '',
+            name: (typeof chapterMatch?.name === 'string' && chapterMatch.name) || currentChapter.data.name || '',
+            pages,
+            languageCodes: preferredLanguages,
+            raw: chapterMatch || {}
+          },
+          variantId
+        )
+
+        if (canonicalChapterId) {
+          await dbUpsert(
+            'chapter_mappings',
+            {
+              workId: comicId,
+              canonicalChapterId,
+              variantChapterId: variantId,
+              strategy: 'runtime-content-resolve',
+              confidence: 0.9,
+              contentPluginId: plugin.id
+            },
+            `chapter-mapping:${canonicalChapterId}:${variantId}`
+          )
+        }
+
+        await queryClient.invalidateQueries({
+          queryKey: restQueryKeys.dbFind('chapter_variants', 'workId', comicId, 5000)
+        })
+        await queryClient.invalidateQueries({
+          queryKey: restQueryKeys.dbFind('chapter_mappings', 'workId', comicId, 5000)
+        })
+
+        setIsResolvingPages(false)
+        setPageResolveError(false)
+        return
+      }
+
+      setPageResolveError(true)
+      setIsResolvingPages(false)
+    }
+
+    void run()
+  }, [
+    chapterId,
+    comicId,
+    currentChapter,
+    work,
+    pluginsQuery.data,
+    chapterVariantsQuery.data,
+    canonicalChaptersQuery.data,
+    chapterLanguagePriority,
+    queryClient
+  ])
+
+  useEffect(() => {
+    const needsLegacyReadProgress =
+      Boolean(currentVariantChapterId) && currentVariantChapterId !== chapterId
+    const legacyReadProgressReady = !needsLegacyReadProgress || legacyReadProgressQuery.isSuccess
+
     if (
       !chapterId ||
       !comicId ||
       !totalPages ||
       !readProgressQuery.isSuccess ||
+      !legacyReadProgressReady ||
       readProgressQuery.fetchStatus !== 'idle'
     ) {
       return
@@ -277,7 +776,7 @@ export const useReaderController = () => {
 
     if (readProgress?.chapterId === chapterId) return
 
-    const record = readProgressQuery.data[0]
+    const record = readProgressQuery.data[0] ?? legacyReadProgressQuery.data?.[0]
     if (record?.data) {
       readProgressRecordIdRef.current = record.id
       const page = Math.max(1, Math.min(record.data.page || 1, totalPages))
@@ -291,6 +790,9 @@ export const useReaderController = () => {
       }
       setReadProgress(nextProgress)
       lastPersistedRef.current = { chapterId, page }
+      if (!readProgressQuery.data[0]) {
+        void persistReadProgressRef.current(nextProgress)
+      }
       return
     }
 
@@ -307,9 +809,12 @@ export const useReaderController = () => {
     chapterId,
     comicId,
     totalPages,
+    currentVariantChapterId,
     readProgressQuery.isSuccess,
+    legacyReadProgressQuery.isSuccess,
     readProgressQuery.fetchStatus,
     readProgressQuery.data,
+    legacyReadProgressQuery.data,
     readProgress?.chapterId
   ])
 
@@ -363,10 +868,10 @@ export const useReaderController = () => {
 
       const pagesForSlide = slideIndexes.map((originalIndex) => {
         const page = pages[originalIndex]
-        const src = chapterId ? getChapterPageUrl(chapterId, originalIndex) : page.url
+        const src = normalizeImageSrc(page.url)
         return {
           key: `${page.fileName}-${originalIndex}`,
-          src: normalizeImageSrc(src),
+          src,
           alt: `Page ${originalIndex + 1}`,
           originalIndex
         }
@@ -381,7 +886,7 @@ export const useReaderController = () => {
     }
 
     return slides
-  }, [pages, readingDirection, canUseDoublePageSpread, pageAspectMap, chapterId])
+  }, [pages, readingDirection, canUseDoublePageSpread, pageAspectMap])
 
   const currentOriginalIndex = useMemo(
     () => Math.max(0, Math.min(safePage - 1, Math.max(0, pages.length - 1))),
@@ -401,17 +906,14 @@ export const useReaderController = () => {
   const verticalOrderedPages = useMemo(() => {
     const ordered = readingDirection === 'rtl' ? [...pages].reverse() : pages
     return ordered.map((page, index) => {
-      const originalIndex = readingDirection === 'rtl' ? pages.length - 1 - index : index
-      const src = normalizeImageSrc(
-        chapterId ? getChapterPageUrl(chapterId, originalIndex) : page.url
-      )
+      const src = normalizeImageSrc(page.url)
       return {
-        key: `${page.fileName}-${originalIndex}`,
+        key: `${page.fileName}-${index}`,
         src,
         alt: `Page ${index + 1}`
       }
     })
-  }, [pages, readingDirection, chapterId])
+  }, [pages, readingDirection])
 
   const goToChapter = useCallback(
     (index: number) => {
@@ -561,7 +1063,7 @@ export const useReaderController = () => {
   }, [readingMode, chapterId, horizontalViewportNode])
 
   useEffect(() => {
-    if (!chapterId || !pages.length || readingMode !== 'horizontal') return
+    if (!pages.length || readingMode !== 'horizontal') return
 
     for (let index = 0; index < pages.length; index += 1) {
       if (pageAspectMap[index]) continue
@@ -570,9 +1072,9 @@ export const useReaderController = () => {
         const aspect = img.naturalHeight >= img.naturalWidth ? 'portrait' : 'landscape'
         setPageAspectMap((current) => (current[index] ? current : { ...current, [index]: aspect }))
       }
-      img.src = getChapterPageUrl(chapterId, index)
+      img.src = pages[index].url
     }
-  }, [chapterId, pages.length, readingMode, pageAspectMap])
+  }, [pages, readingMode, pageAspectMap])
 
   useEffect(() => {
     if (readingMode !== 'vertical' || !verticalScrollContainerNode || !readProgress || !pages.length)
@@ -713,23 +1215,11 @@ export const useReaderController = () => {
       }
 
       if (event.key === 'ArrowLeft') {
-        if (readingMode === 'vertical') {
-          goToPreviousPage()
-        } else if (readingDirection === 'rtl') {
-          goToPreviousPage()
-        } else {
-          goToPreviousPage()
-        }
+        goToPreviousPage()
       }
 
       if (event.key === 'ArrowRight') {
-        if (readingMode === 'vertical') {
-          goToNextPage()
-        } else if (readingDirection === 'rtl') {
-          goToNextPage()
-        } else {
-          goToNextPage()
-        }
+        goToNextPage()
       }
 
       if (event.key === 'ArrowUp' && readingMode === 'vertical') {
@@ -743,7 +1233,7 @@ export const useReaderController = () => {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [readingMode, readingDirection, goToPreviousPage, goToNextPage, navigate])
+  }, [readingMode, goToPreviousPage, goToNextPage, navigate])
 
   const setReadingModeAndPersist = async (vertical: boolean) => {
     const next = vertical ? 'vertical' : 'horizontal'
@@ -754,21 +1244,21 @@ export const useReaderController = () => {
       setZoomVisible(false)
       pendingVerticalSyncRef.current = true
     }
-    await persistComicSettings(next, readingDirection, doublePageSpread)
+    await persistWorkSettings(next, readingDirection, doublePageSpread)
   }
 
   const setReadingDirectionAndPersist = async (rtl: boolean) => {
     const next = rtl ? 'rtl' : 'ltr'
     if (next === readingDirection) return
     setReadingDirection(next)
-    await persistComicSettings(readingMode, next, doublePageSpread)
+    await persistWorkSettings(readingMode, next, doublePageSpread)
   }
 
   const setDoublePageSpreadAndPersist = async (enabled: boolean) => {
     const next = Boolean(enabled)
     if (next === doublePageSpread) return
     setDoublePageSpread(next)
-    await persistComicSettings(readingMode, readingDirection, next)
+    await persistWorkSettings(readingMode, readingDirection, next)
   }
 
   const currentZoomImageKey = useMemo(() => {
@@ -778,6 +1268,16 @@ export const useReaderController = () => {
     }
     return `${chapterId}:${safePage}`
   }, [chapterId, pages.length, readingMode, displayedHorizontalPages, safePage])
+
+  const externalChapterUrl =
+    !pages.length && typeof currentChapter?.data.siteLink === 'string' && currentChapter.data.siteLink.trim()
+      ? currentChapter.data.siteLink.trim()
+      : null
+
+  const openExternalChapter = useCallback(() => {
+    if (!externalChapterUrl) return
+    window.open(externalChapterUrl, '_blank', 'noopener,noreferrer')
+  }, [externalChapterUrl])
 
   return {
     chapterPagesQuery,
@@ -798,6 +1298,8 @@ export const useReaderController = () => {
     zoomVisible,
     setZoomVisible,
     currentZoomImageKey,
+    externalChapterUrl,
+    openExternalChapter,
     pages,
     horizontalSlides,
     currentHorizontalSlideIndex,

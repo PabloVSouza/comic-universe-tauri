@@ -227,7 +227,9 @@ pub fn import_legacy_database(
                         'tag', tag,
                         'description', description
                       )
-                    FROM legacy_db."Plugin";
+                    FROM legacy_db."Plugin"
+                    WHERE lower(trim(COALESCE(tag, ''))) <> 'hqnow'
+                      AND lower(trim(COALESCE(name, ''))) NOT IN ('hq now', 'hqnow');
                     "#,
                     [],
                 )

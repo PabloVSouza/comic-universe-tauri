@@ -1,4 +1,7 @@
 {
+  "app": {
+    "connectingBackend": "Conectando ao backend local..."
+  },
   "topbar": {
     "menu": {
       "title": "Menu",
@@ -82,6 +85,11 @@
   },
   "mainContent": {
     "nav": {
+      "languages": {
+        "auto": "Automático",
+        "none": "Idioma",
+        "select": "Idioma dos capítulos"
+      },
       "actions": {
         "download": "Baixar"
       }
@@ -131,7 +139,9 @@
     "nextPage": "Próxima página",
     "loadingPages": "Carregando páginas...",
     "failedToLoadPages": "Falha ao carregar páginas do capítulo.",
-    "noPages": "Não há páginas disponíveis para este capítulo."
+    "noPages": "Não há páginas disponíveis para este capítulo.",
+    "externalChapter": "Este capítulo está disponível apenas externamente.",
+    "openExternalChapter": "Abrir capítulo externo"
   },
   "searchContent": {
     "plugins": {
@@ -150,6 +160,16 @@
       "add": "Adicionar ao banco",
       "adding": "Adicionando...",
       "added": "Adicionado"
+    },
+    "progress": {
+      "loadingDetails": "Carregando detalhes",
+      "loadingChapterList": "Carregando lista de capítulos",
+      "savingWork": "Salvando obra",
+      "savingChapterIndex": "Salvando índice de capítulos",
+      "loadingContentSources": "Carregando fontes de conteúdo",
+      "savingComic": "Salvando quadrinho",
+      "savingReadableChapters": "Salvando capítulos legíveis",
+      "done": "Concluído"
     },
     "empty": "Nenhum resultado disponível."
   },

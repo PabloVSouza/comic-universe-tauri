@@ -6,6 +6,7 @@ import {
   ReaderZoomWindow,
   VerticalReader
 } from 'components'
+import { Button } from 'components/ui/button'
 import { useReaderController } from 'hooks'
 import { FC } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -31,6 +32,8 @@ export const Reader: FC = () => {
     zoomVisible,
     setZoomVisible,
     currentZoomImageKey,
+    externalChapterUrl,
+    openExternalChapter,
     pages,
     horizontalSlides,
     currentHorizontalSlideIndex,
@@ -109,13 +112,22 @@ export const Reader: FC = () => {
           </div>
         ) : null}
 
-        {chapterPagesQuery.isError ? (
+        {chapterPagesQuery.isError && !externalChapterUrl ? (
           <div className="grid h-full place-items-center px-4 text-center text-sm text-destructive/90">
             {t('reader.failedToLoadPages')}
           </div>
         ) : null}
 
-        {!chapterPagesQuery.isLoading && !chapterPagesQuery.isError && !pages.length ? (
+        {!chapterPagesQuery.isLoading && !chapterPagesQuery.isError && !pages.length && externalChapterUrl ? (
+          <div className="grid h-full place-items-center gap-3 px-4 text-center">
+            <p className="text-sm text-foreground/70">{t('reader.externalChapter')}</p>
+            <Button type="button" onClick={openExternalChapter}>
+              {t('reader.openExternalChapter')}
+            </Button>
+          </div>
+        ) : null}
+
+        {!chapterPagesQuery.isLoading && !chapterPagesQuery.isError && !pages.length && !externalChapterUrl ? (
           <div className="grid h-full place-items-center text-sm text-foreground/70">
             {t('reader.noPages')}
           </div>

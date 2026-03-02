@@ -13,7 +13,7 @@ export const searchContentWindowDefinition: WindowDefinition<SearchContentWindow
     resizable: false,
     movable: false,
     titleBar: false,
-    contentClassName: 'h-full w-full overflow-hidden'
+    contentClassName: 'h-full w-full overflow-y-auto'
   },
   initialStatus: () =>
     ({

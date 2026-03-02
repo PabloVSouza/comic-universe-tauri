@@ -31,15 +31,20 @@ export const ReaderTopBar: FC<ReaderTopBarProps> = ({
   const { t } = useTranslation()
 
   return (
-    <div className="relative z-20 flex h-12 items-center justify-end bg-background px-3 backdrop-blur-sm">
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-20">
+    <div className="relative z-20 flex h-12 items-center gap-2 bg-background px-3 backdrop-blur-sm sm:justify-end">
+      <div className="min-w-0 flex-1 pr-1 sm:hidden">
+        <p className="truncate text-left text-sm">{comicName}</p>
+        <p className="truncate text-left text-xs text-foreground/70">{chapterName}</p>
+      </div>
+
+      <div className="pointer-events-none absolute inset-0 hidden items-center justify-center px-20 sm:flex">
         <div className="min-w-0 text-center">
           <p className="truncate text-sm">{comicName}</p>
           <p className="truncate text-xs text-foreground/70">{chapterName}</p>
         </div>
       </div>
 
-      <div className="z-20 flex items-center gap-2">
+      <div className="z-20 flex shrink-0 items-center gap-2">
         <IconTooltipButton
           label={t('reader.verticalReading')}
           onClick={() => onSetReadingMode(readingMode !== 'vertical')}
