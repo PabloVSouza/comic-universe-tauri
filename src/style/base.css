@@ -9,25 +9,16 @@
     color: var(--foreground);
     overscroll-behavior: none;
     background-color: transparent;
-    --cu-safe-top: env(safe-area-inset-top, 0px);
+    --cu-safe-top: 0px;
   }
 
-  .tauri-runtime #root {
+  #root.tauri-runtime {
     min-height: 100dvh;
     background-color: #090b14;
     border-radius: 16px;
     overflow: hidden;
     clip-path: inset(0 round 16px);
     isolation: isolate;
-  }
-
-  .tauri-runtime.android-runtime #root {
-    border-radius: 0;
-    clip-path: none;
-  }
-
-  .tauri-runtime.android-runtime {
-    --cu-safe-top: max(env(safe-area-inset-top, 0px), 2rem);
   }
 
   body,

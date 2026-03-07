@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import { I18nextProvider } from 'react-i18next'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { isTauri } from '@tauri-apps/api/core'
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import i18n from 'i18n'
 import Routes from 'routes'
 import 'style/style.css'
@@ -13,16 +13,48 @@ import { windowRegistry } from 'windows'
 import { ApiEndpointBridge } from 'components'
 import { Toaster } from 'components/ui'
 
-if (isTauri()) {
-  document.documentElement.classList.add('tauri-runtime')
-  if (/Android/i.test(globalThis.navigator?.userAgent || '')) {
-    document.documentElement.classList.add('android-runtime')
-  } else {
-    document.documentElement.classList.remove('android-runtime')
+const rootElement = document.getElementById('root') as HTMLElement | null
+
+const applyRuntimeClasses = (platform?: string) => {
+  rootElement?.classList.add('tauri-runtime')
+  rootElement?.classList.remove('android-runtime')
+
+  if (!rootElement) {
+    return
   }
+
+  rootElement.style.removeProperty('--cu-safe-top')
+  rootElement.style.removeProperty('border-radius')
+  rootElement.style.removeProperty('clip-path')
+
+  if (platform === 'android') {
+    rootElement.classList.add('android-runtime')
+    rootElement.style.setProperty('--cu-safe-top', 'max(env(safe-area-inset-top, 0px), 2.25rem)')
+    rootElement.style.setProperty('border-radius', '0')
+    rootElement.style.setProperty('clip-path', 'none')
+  }
+}
+
+const detectFallbackPlatform = () => {
+  if (/Android/i.test(globalThis.navigator?.userAgent || '')) {
+    return 'android'
+  }
+
+  return 'unknown'
+}
+
+if (isTauri()) {
+  applyRuntimeClasses()
+  void invoke<string>('get_runtime_platform')
+    .then((platform) => {
+      applyRuntimeClasses(platform)
+    })
+    .catch(() => {
+      applyRuntimeClasses(detectFallbackPlatform())
+    })
 } else {
-  document.documentElement.classList.remove('tauri-runtime')
-  document.documentElement.classList.remove('android-runtime')
+  rootElement?.classList.remove('tauri-runtime')
+  rootElement?.classList.remove('android-runtime')
 }
 
 const queryClient = new QueryClient({
@@ -36,7 +68,7 @@ const queryClient = new QueryClient({
   }
 })
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+ReactDOM.createRoot(rootElement as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <I18nextProvider i18n={i18n}>

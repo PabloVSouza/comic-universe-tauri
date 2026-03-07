@@ -15,6 +15,7 @@ export const Reader: FC = () => {
   const { t } = useTranslation()
   const {
     chapterPagesQuery,
+    isResolvingPages,
     comicName,
     chapterName,
     readingMode,
@@ -42,7 +43,6 @@ export const Reader: FC = () => {
     goToPreviousPage,
     goToNextPage,
     verticalOrderedPages,
-    verticalDesktopPageHeight,
     setVerticalScrollContainerRef,
     verticalPageRefs,
     safePage,
@@ -106,7 +106,7 @@ export const Reader: FC = () => {
           />
         ) : null}
 
-        {chapterPagesQuery.isLoading ? (
+        {(chapterPagesQuery.isLoading || isResolvingPages) ? (
           <div className="grid h-full place-items-center text-sm text-foreground/70">
             {t('reader.loadingPages')}
           </div>
@@ -118,7 +118,7 @@ export const Reader: FC = () => {
           </div>
         ) : null}
 
-        {!chapterPagesQuery.isLoading && !chapterPagesQuery.isError && !pages.length && externalChapterUrl ? (
+        {!chapterPagesQuery.isLoading && !isResolvingPages && !chapterPagesQuery.isError && !pages.length && externalChapterUrl ? (
           <div className="grid h-full place-items-center gap-3 px-4 text-center">
             <p className="text-sm text-foreground/70">{t('reader.externalChapter')}</p>
             <Button type="button" onClick={openExternalChapter}>
@@ -127,7 +127,7 @@ export const Reader: FC = () => {
           </div>
         ) : null}
 
-        {!chapterPagesQuery.isLoading && !chapterPagesQuery.isError && !pages.length && !externalChapterUrl ? (
+        {!chapterPagesQuery.isLoading && !isResolvingPages && !chapterPagesQuery.isError && !pages.length && !externalChapterUrl ? (
           <div className="grid h-full place-items-center text-sm text-foreground/70">
             {t('reader.noPages')}
           </div>
@@ -149,8 +149,6 @@ export const Reader: FC = () => {
           ) : (
             <VerticalReader
               pages={verticalOrderedPages}
-              isMobileViewport={isMobileViewport}
-              desktopPageHeight={verticalDesktopPageHeight}
               setScrollContainerRef={setVerticalScrollContainerRef}
               pageRefs={verticalPageRefs}
               onPreviousPage={goToPreviousPage}

@@ -158,10 +158,14 @@ export const buildChapterColumns = ({
       ),
       cell: ({ row }) => (
         <div className="flex items-center gap-2 px-2">
-          {row.original.chapterLanguage ? (
-            <Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px]">
-              {row.original.chapterLanguage}
-            </Badge>
+          {row.original.chapterLanguages.length > 0 ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-1">
+              {row.original.chapterLanguages.map((language) => (
+                <Badge key={`${row.original.id}:${language}`} variant="outline" className="px-1.5 py-0 text-[10px]">
+                  {language}
+                </Badge>
+              ))}
+            </div>
           ) : null}
           <div className="min-w-0 truncate">{row.original.chapterName}</div>
         </div>

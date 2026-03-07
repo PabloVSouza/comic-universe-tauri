@@ -48,6 +48,7 @@ export interface ResolvedChapterData {
   name?: string
   canonicalChapterId?: string
   variantChapterId?: string
+  availableLanguageCodes?: string[]
   pages?: unknown
   [key: string]: unknown
 }
@@ -186,6 +187,130 @@ const selectPreferredVariant = (
   return sorted[0] ?? null
 }
 
+const variantGroupingToken = (variant: DbRecord<ChapterVariantData>): string => {
+  return (
+    normalizeChapterNumberToken(variant.data.number) ||
+    normalizeChapterNumberToken(variant.data.name) ||
+    variant.id
+  )
+}
+
+const resolvedChapterGroupingToken = (chapter: ResolvedChapterRecord): string => {
+  return (
+    normalizeChapterNumberToken(chapter.data.number) ||
+    normalizeChapterNumberToken(chapter.data.name) ||
+    chapter.id
+  )
+}
+
+const resolvedChapterLanguageCodes = (chapter: ResolvedChapterRecord): string[] => {
+  const fromAvailable = Array.isArray(chapter.data.availableLanguageCodes)
+    ? chapter.data.availableLanguageCodes.map((entry) => normalizeLanguageCode(entry)).filter(Boolean)
+    : []
+  if (fromAvailable.length > 0) {
+    return Array.from(new Set(fromAvailable))
+  }
+
+  const rawRecord =
+    chapter.data.raw && typeof chapter.data.raw === 'object'
+      ? (chapter.data.raw as Record<string, unknown>)
+      : null
+  const fromRaw = rawRecord
+    ? [
+        rawRecord.language,
+        rawRecord.lang,
+        ...(Array.isArray(rawRecord.languageCodes) ? rawRecord.languageCodes : []),
+        ...(Array.isArray(rawRecord.languages) ? rawRecord.languages : [])
+      ]
+        .map((entry) => normalizeLanguageCode(entry))
+        .filter(Boolean)
+    : []
+  const fromData = [
+    chapter.data.language,
+    ...(Array.isArray(chapter.data.languageCodes) ? chapter.data.languageCodes : [])
+  ]
+    .map((entry) => normalizeLanguageCode(entry))
+    .filter(Boolean)
+
+  return Array.from(new Set([...fromRaw, ...fromData]))
+}
+
+const resolvedChapterLanguageRank = (
+  chapter: ResolvedChapterRecord,
+  preferredLanguageCodes: string[]
+): number => {
+  if (preferredLanguageCodes.length === 0) return Number.MAX_SAFE_INTEGER
+
+  const languages = resolvedChapterLanguageCodes(chapter)
+  if (languages.length === 0) return Number.MAX_SAFE_INTEGER
+
+  let best = Number.MAX_SAFE_INTEGER
+  for (const language of languages) {
+    preferredLanguageCodes.forEach((preferred, index) => {
+      const score = languagePreferenceScore(language, preferred)
+      if (score === null) return
+      best = Math.min(best, index * 10 + score)
+    })
+  }
+
+  return best
+}
+
+const selectPreferredResolvedChapter = (
+  chapters: ResolvedChapterRecord[],
+  preferredLanguageCodes: string[]
+): ResolvedChapterRecord => {
+  const sorted = [...chapters].sort((left, right) => {
+    if (preferredLanguageCodes.length > 0) {
+      const leftRank = resolvedChapterLanguageRank(left, preferredLanguageCodes)
+      const rightRank = resolvedChapterLanguageRank(right, preferredLanguageCodes)
+      if (leftRank !== rightRank) return leftRank - rightRank
+    }
+
+    const leftHasPages = normalizeChapterPages(left.data.pages).length > 0 ? 1 : 0
+    const rightHasPages = normalizeChapterPages(right.data.pages).length > 0 ? 1 : 0
+    if (leftHasPages !== rightHasPages) return rightHasPages - leftHasPages
+
+    const leftCanonical = typeof left.data.canonicalChapterId === 'string' ? 1 : 0
+    const rightCanonical = typeof right.data.canonicalChapterId === 'string' ? 1 : 0
+    if (leftCanonical !== rightCanonical) return rightCanonical - leftCanonical
+
+    return left.id.localeCompare(right.id)
+  })
+
+  return sorted[0] ?? chapters[0]
+}
+
+const collapseResolvedChapters = (
+  chapters: ResolvedChapterRecord[],
+  preferredLanguageCodes: string[]
+): ResolvedChapterRecord[] => {
+  const groups = new Map<string, ResolvedChapterRecord[]>()
+  for (const chapter of chapters) {
+    const token = resolvedChapterGroupingToken(chapter)
+    const group = groups.get(token) ?? []
+    group.push(chapter)
+    groups.set(token, group)
+  }
+
+  return [...groups.values()]
+    .map((group) => {
+      const preferred = selectPreferredResolvedChapter(group, preferredLanguageCodes)
+      const availableLanguageCodes = Array.from(
+        new Set(group.flatMap((chapter) => resolvedChapterLanguageCodes(chapter)).filter(Boolean))
+      )
+
+      return {
+        ...preferred,
+        data: {
+          ...preferred.data,
+          availableLanguageCodes
+        }
+      }
+    })
+    .sort((a, b) => sortByChapterNumber({ number: a.data.number }, { number: b.data.number }))
+}
+
 const sortByChapterNumber = (a: { number?: unknown }, b: { number?: unknown }): number => {
   const av = chapterNumberSortValue(a.number)
   const bv = chapterNumberSortValue(b.number)
@@ -289,8 +414,8 @@ export const resolveChapterVariants = (
             (typeof canonical.data.number === 'string' && canonical.data.number) ||
             selectedVariant.data.number,
           name:
+            (typeof selectedVariant.data.name === 'string' && selectedVariant.data.name) ||
             (typeof canonical.data.name === 'string' && canonical.data.name) ||
-            selectedVariant.data.name ||
             selectedVariant.data.number ||
             '-'
         }
@@ -320,13 +445,26 @@ export const resolveChapterVariants = (
     })
   }
 
-  const fallbackVariants = chapterVariants
-    .filter((variant) => !usedVariantIds.has(variant.id))
-    .filter((variant) =>
-      strictLanguageFilter && preferredLanguageCodes.length > 0
-        ? variantLanguageRank(variant, preferredLanguageCodes) !== Number.MAX_SAFE_INTEGER
-        : true
-    )
+  const fallbackVariantGroups = new Map<string, Array<DbRecord<ChapterVariantData>>>()
+  for (const variant of chapterVariants) {
+    if (usedVariantIds.has(variant.id)) continue
+    if (
+      strictLanguageFilter &&
+      preferredLanguageCodes.length > 0 &&
+      variantLanguageRank(variant, preferredLanguageCodes) === Number.MAX_SAFE_INTEGER
+    ) {
+      continue
+    }
+
+    const token = variantGroupingToken(variant)
+    const group = fallbackVariantGroups.get(token) ?? []
+    group.push(variant)
+    fallbackVariantGroups.set(token, group)
+  }
+
+  const fallbackVariants = [...fallbackVariantGroups.values()]
+    .map((group) => selectPreferredVariant(group, preferredLanguageCodes, strictLanguageFilter))
+    .filter((variant): variant is DbRecord<ChapterVariantData> => Boolean(variant))
     .sort((a, b) => sortByChapterNumber({ number: a.data.number }, { number: b.data.number }))
 
   for (const variant of fallbackVariants) {
@@ -343,7 +481,7 @@ export const resolveChapterVariants = (
     })
   }
 
-  if (resolved.length > 0) return resolved
+  if (resolved.length > 0) return collapseResolvedChapters(resolved, preferredLanguageCodes)
 
   const byNumber = new Map<string, DbRecord<ChapterVariantData>>()
   for (const variant of chapterVariants) {
@@ -354,13 +492,13 @@ export const resolveChapterVariants = (
     ) {
       continue
     }
-    const token =
-      normalizeChapterNumberToken(variant.data.number) || normalizeChapterNumberToken(variant.data.name)
+    const token = variantGroupingToken(variant)
     if (!token || byNumber.has(token)) continue
     byNumber.set(token, variant)
   }
 
-  return [...byNumber.values()]
+  return collapseResolvedChapters(
+    [...byNumber.values()]
     .sort((a, b) => sortByChapterNumber({ number: a.data.number }, { number: b.data.number }))
     .map((variant) => ({
       id: variant.id,
@@ -372,5 +510,7 @@ export const resolveChapterVariants = (
         number: variant.data.number,
         name: variant.data.name || variant.data.number || '-'
       }
-    }))
+    })),
+    preferredLanguageCodes
+  )
 }

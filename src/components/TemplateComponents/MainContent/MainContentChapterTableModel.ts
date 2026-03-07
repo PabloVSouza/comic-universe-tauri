@@ -4,7 +4,7 @@ export interface ChapterRowModel {
   id: string
   chapterNumber: string
   chapterName: string
-  chapterLanguage: string
+  chapterLanguages: string[]
   progress: number
   isRead: boolean
   numberSortValue: number | null
@@ -36,26 +36,33 @@ const getChapterName = (chapter: ResolvedChapterRecord): string => {
   return ''
 }
 
-const getChapterLanguage = (chapter: ResolvedChapterRecord): string => {
-  const direct = chapter.data.language
-  if (typeof direct === 'string' && direct.trim().length) return direct.trim().toUpperCase()
-
+const getChapterLanguages = (chapter: ResolvedChapterRecord): string[] => {
+  const available = Array.isArray(chapter.data.availableLanguageCodes)
+    ? chapter.data.availableLanguageCodes
+    : []
+  const direct = typeof chapter.data.language === 'string' ? [chapter.data.language] : []
+  const fromArray = Array.isArray(chapter.data.languageCodes) ? chapter.data.languageCodes : []
   const rawRecord =
     chapter.data.raw && typeof chapter.data.raw === 'object'
       ? (chapter.data.raw as Record<string, unknown>)
       : null
-  const rawDirect =
-    (typeof rawRecord?.language === 'string' && rawRecord.language.trim()) ||
-    (typeof rawRecord?.lang === 'string' && rawRecord.lang.trim()) ||
-    ''
-  if (rawDirect) return rawDirect.toUpperCase()
+  const raw = rawRecord
+    ? [
+        rawRecord.language,
+        rawRecord.lang,
+        ...(Array.isArray(rawRecord.languageCodes) ? rawRecord.languageCodes : [])
+      ]
+    : []
 
-  const fromArray = Array.isArray(chapter.data.languageCodes)
-    ? chapter.data.languageCodes.find((entry) => typeof entry === 'string' && entry.trim().length)
-    : null
-  if (typeof fromArray === 'string') return fromArray.trim().toUpperCase()
-
-  return ''
+  return Array.from(
+    new Set(
+      [...available, ...direct, ...fromArray, ...raw]
+        .filter(
+          (entry): entry is string => typeof entry === 'string' && entry.trim().length > 0
+        )
+        .map((entry) => entry.trim().toUpperCase())
+    )
+  )
 }
 
 export const mapChapterToRow = (
@@ -73,7 +80,7 @@ export const mapChapterToRow = (
     id: chapter.id,
     chapterNumber: getChapterNumber(chapter),
     chapterName: getChapterName(chapter),
-    chapterLanguage: getChapterLanguage(chapter),
+    chapterLanguages: getChapterLanguages(chapter),
     progress,
     isRead: progress >= 100,
     numberSortValue: extractComparableNumber(chapter.data.number)

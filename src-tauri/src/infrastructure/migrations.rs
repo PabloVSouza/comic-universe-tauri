@@ -108,10 +108,6 @@ impl MigrationRunner for SqliteMigrationRunner {
             .map_err(|error| AppError::infrastructure(error.to_string()))?;
         }
 
-        if !applied_versions.contains(&2) && import_legacy_database(conn, None)?.is_some() {
-            insert_migration_record(conn, 2, "legacy_database_import")?;
-        }
-
         Ok(())
     }
 }
@@ -296,15 +292,6 @@ fn legacy_table_exists(conn: &Connection, table_name: &str) -> Result<bool, AppE
     rows.next()
         .map(|row| row.is_some())
         .map_err(|error| AppError::infrastructure(error.to_string()))
-}
-
-fn insert_migration_record(conn: &Connection, version: i64, name: &str) -> Result<(), AppError> {
-    conn.execute(
-        "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2);",
-        params![version, name],
-    )
-    .map_err(|error| AppError::infrastructure(error.to_string()))?;
-    Ok(())
 }
 
 fn resolve_legacy_db_path() -> Option<PathBuf> {

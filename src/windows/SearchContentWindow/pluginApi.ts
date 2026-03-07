@@ -197,15 +197,52 @@ const pickArrayStrings = (value: Record<string, unknown>, keys: string[]): strin
   return []
 }
 
+const normalizePageEntry = (entry: unknown, index: number): Record<string, unknown> | null => {
+  if (typeof entry === 'string') {
+    const url = entry.trim()
+    if (!url) return null
+    return {
+      url,
+      fileName: `page-${index + 1}`
+    }
+  }
+
+  if (!entry || typeof entry !== 'object') return null
+  const item = entry as Record<string, unknown>
+  const urlRaw =
+    (typeof item.url === 'string' && item.url) ||
+    (typeof item.path === 'string' && item.path) ||
+    (typeof item.src === 'string' && item.src) ||
+    ''
+  const url = urlRaw.trim()
+  if (!url) return null
+
+  const fileNameRaw =
+    (typeof item.fileName === 'string' && item.fileName) ||
+    (typeof item.filename === 'string' && item.filename) ||
+    (typeof item.name === 'string' && item.name) ||
+    `page-${index + 1}`
+
+  return {
+    ...item,
+    url,
+    fileName: fileNameRaw.trim() || `page-${index + 1}`
+  }
+}
+
 const parsePagesValue = (raw: unknown): Array<Record<string, unknown>> => {
   if (Array.isArray(raw)) {
-    return raw.map(asRecord).filter((item) => Object.keys(item).length > 0)
+    return raw
+      .map((entry, index) => normalizePageEntry(entry, index))
+      .filter((item): item is Record<string, unknown> => Boolean(item))
   }
   if (typeof raw === 'string' && raw.trim()) {
     try {
       const parsed = JSON.parse(raw)
       if (Array.isArray(parsed)) {
-        return parsed.map(asRecord).filter((item) => Object.keys(item).length > 0)
+        return parsed
+          .map((entry, index) => normalizePageEntry(entry, index))
+          .filter((item): item is Record<string, unknown> => Boolean(item))
       }
     } catch {
       return []
@@ -325,29 +362,36 @@ const deriveLanguages = (
 
 const normalizeChapters = async (
   plugin: InstalledPlugin,
-  rawComic: Record<string, unknown>,
+  _rawComic: Record<string, unknown>,
   chaptersRaw: unknown[]
 ): Promise<NormalizedChapter[]> => {
-  const comicSiteId = pickString(rawComic, ['siteId', 'id'])
   const preferredLanguages = resolvePreferredLanguageCodes(plugin)
   const chapters = chaptersRaw.map(asRecord).filter((chapter) => Object.keys(chapter).length > 0)
   const normalized: NormalizedChapter[] = []
 
   for (const chapter of chapters) {
+    const chapterSiteId = pickString(chapter, ['siteId', 'id'])
+    const chapterSiteLink = pickString(chapter, ['siteLink', 'url', 'path'])
+    const pageCountHint = parseOptionalNonNegativeNumber(
+      chapter.pageCount ?? chapter.pagesCount ?? chapter.page_count
+    )
+    const readableFlag = typeof chapter.readable === 'boolean' ? chapter.readable : undefined
+    const isClearlyUnreadable =
+      readableFlag === false ||
+      Boolean(chapterSiteLink) ||
+      (pageCountHint === 0 && Boolean(chapterSiteId))
+
     let pages = parsePagesValue(chapter.pages ?? chapter.pictures ?? chapter.images)
-    if (pages.length === 0) {
-      try {
-        const chapterSiteId = pickString(chapter, ['siteId', 'id'])
-        const fetchedPages = await postPlugin<Array<Record<string, unknown>>>(plugin.endpoint, 'getPages', {
-          siteId: comicSiteId,
-          chapterSiteId,
-          languageCodes: preferredLanguages
-        })
-        pages = parsePagesValue(fetchedPages)
-      } catch {
-        pages = []
-      }
+    const isReadableCandidate =
+      pages.length > 0 ||
+      readableFlag === true ||
+      (pageCountHint !== null && pageCountHint > 0) ||
+      (Boolean(chapterSiteId) && !chapterSiteLink && readableFlag !== false)
+
+    if (isClearlyUnreadable || !isReadableCandidate) {
+      continue
     }
+
     const languageCodes = Array.from(
       new Set(
         [
@@ -360,8 +404,8 @@ const normalizeChapters = async (
     )
 
     normalized.push({
-      siteId: pickString(chapter, ['siteId', 'id']),
-      siteLink: pickString(chapter, ['siteLink', 'url', 'path']),
+      siteId: chapterSiteId,
+      siteLink: chapterSiteLink,
       name: pickString(chapter, ['name', 'title']),
       number: pickString(chapter, ['number', 'chapterNumber']),
       languageCodes,
@@ -370,35 +414,24 @@ const normalizeChapters = async (
     })
   }
 
-  const consolidatedByNumber = new Map<string, NormalizedChapter>()
-  for (const chapter of normalized) {
-    const chapterKey = normalizeChapterNumber(chapter.number || chapter.siteId || chapter.name)
-    const current = consolidatedByNumber.get(chapterKey)
-    if (!current) {
-      consolidatedByNumber.set(chapterKey, chapter)
-      continue
-    }
+  return normalized.sort((left, right) => {
+    const leftValue = Number(left.number)
+    const rightValue = Number(right.number)
+    const leftValid = Number.isFinite(leftValue)
+    const rightValid = Number.isFinite(rightValue)
 
-    const currentRank = chapterLanguageRank(current.languageCodes, preferredLanguages)
-    const nextRank = chapterLanguageRank(chapter.languageCodes, preferredLanguages)
-    const shouldReplace =
-      chapter.pages.length > current.pages.length ||
-      (chapter.pages.length === current.pages.length &&
-        (nextRank < currentRank ||
-          (nextRank === currentRank &&
-            preferredChapterTitle(chapter.name).length > preferredChapterTitle(current.name).length)))
+    if (leftValid && rightValid && leftValue !== rightValue) return leftValue - rightValue
+    if (leftValid && !rightValid) return -1
+    if (!leftValid && rightValid) return 1
 
-    if (!shouldReplace) {
-      continue
-    }
+    const leftRank = chapterLanguageRank(left.languageCodes, preferredLanguages)
+    const rightRank = chapterLanguageRank(right.languageCodes, preferredLanguages)
+    if (leftRank !== rightRank) return leftRank - rightRank
 
-    if (chapter.languageCodes.length === 0) {
-      chapter.languageCodes = current.languageCodes
-    }
-    consolidatedByNumber.set(chapterKey, chapter)
-  }
+    if (left.pages.length !== right.pages.length) return right.pages.length - left.pages.length
 
-  return Array.from(consolidatedByNumber.values())
+    return (left.siteId || left.name).localeCompare(right.siteId || right.name)
+  })
 }
 
 const normalizeCanonicalChapters = (chaptersRaw: unknown[], fallbackLanguages: string[]): CanonicalChapter[] => {
@@ -916,17 +949,6 @@ export const addSearchResultToDatabase = async (
       : (result.chapterCount ?? 0)
 
   let canonicalChapters = normalizeCanonicalChapters(metadataChaptersRaw, result.languages)
-  if (canonicalChapters.length === 0 && effectiveChapterCount > 0) {
-    canonicalChapters = Array.from({ length: effectiveChapterCount }, (_, index) => {
-      const number = String(index + 1)
-      return {
-        number,
-        name: i18n.t('common.chapterLabel', { number }),
-        languageCodes: result.languages.length ? result.languages : ['unknown'],
-        raw: { generated: true, source: 'chapterCount' }
-      }
-    })
-  }
   const canonicalByNumber = new Map<string, { id: string; number: string; name: string }>()
 
   for (let index = 0; index < canonicalChapters.length; index += 1) {
@@ -964,12 +986,22 @@ export const addSearchResultToDatabase = async (
       plugin.providesContent &&
       plugin.contentTypes.some((type) => ['comic', 'manga', result.contentType].includes(type))
   )
+  const relatedContentPluginIds = new Set<string>([
+    result.pluginId,
+    ...Object.keys(result.contentSiteIdByPlugin ?? {})
+  ])
+  const candidateContentPlugins =
+    relatedContentPluginIds.size > 0
+      ? contentPlugins.filter((plugin) => relatedContentPluginIds.has(plugin.id))
+      : contentPlugins
+  const prioritizedContentPlugins =
+    candidateContentPlugins.length > 0 ? candidateContentPlugins : contentPlugins
 
   let bestContentPlugin: InstalledPlugin | null = null
   let bestContentChapters: NormalizedChapter[] = []
 
   updateProgress(42, 'searchContent.progress.loadingContentSources')
-  for (const contentPlugin of contentPlugins) {
+  for (const contentPlugin of prioritizedContentPlugins) {
     let contentChapters: NormalizedChapter[] = []
     try {
       contentChapters = await fetchContentChaptersForResult(contentPlugin, result)
@@ -1054,6 +1086,45 @@ export const addSearchResultToDatabase = async (
           mappingId
         )
       }
+    }
+  }
+
+  if (canonicalChapters.length === 0 && canonicalByNumber.size === 0 && effectiveChapterCount > 0) {
+    canonicalChapters = Array.from({ length: effectiveChapterCount }, (_, index) => {
+      const number = String(index + 1)
+      return {
+        number,
+        name: i18n.t('common.chapterLabel', { number }),
+        languageCodes: result.languages.length ? result.languages : ['unknown'],
+        raw: { generated: true, source: 'chapterCount' }
+      }
+    })
+
+    for (let index = 0; index < canonicalChapters.length; index += 1) {
+      const chapter = canonicalChapters[index]
+      const canonicalChapterId = stableId(
+        'canonical-chapter',
+        workId,
+        chapter.siteId || chapter.number || chapter.name || String(index + 1)
+      )
+      const chapterNumber = chapter.number || String(index + 1)
+      const chapterData: Record<string, unknown> = {
+        workId,
+        number: chapterNumber,
+        name: chapter.name || i18n.t('common.chapterLabel', { number: chapterNumber }),
+        siteId: chapter.siteId || null,
+        siteLink: chapter.siteLink || null,
+        languageCodes: chapter.languageCodes,
+        sourcePluginId: result.pluginId,
+        sourcePluginTag: result.pluginTag,
+        raw: chapter.raw
+      }
+      await dbUpsert('canonical_chapters', chapterData, canonicalChapterId)
+      canonicalByNumber.set(normalizeChapterNumber(chapterNumber), {
+        id: canonicalChapterId,
+        number: chapterNumber,
+        name: chapterData.name as string
+      })
     }
   }
 

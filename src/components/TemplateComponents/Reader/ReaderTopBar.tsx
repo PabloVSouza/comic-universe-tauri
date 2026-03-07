@@ -31,49 +31,51 @@ export const ReaderTopBar: FC<ReaderTopBarProps> = ({
   const { t } = useTranslation()
 
   return (
-    <div className="relative z-20 flex h-12 items-center gap-2 bg-background px-3 backdrop-blur-sm sm:justify-end">
-      <div className="min-w-0 flex-1 pr-1 sm:hidden">
-        <p className="truncate text-left text-sm">{comicName}</p>
-        <p className="truncate text-left text-xs text-foreground/70">{chapterName}</p>
+    <div className="relative z-20 h-[calc(3rem+var(--cu-safe-top,0px))] bg-background backdrop-blur-sm">
+      <div className="absolute inset-x-0 bottom-0 flex h-12 items-center gap-2 px-3 sm:justify-end">
+        <div className="min-w-0 flex-1 pr-1 sm:hidden">
+          <p className="truncate text-left text-sm">{comicName}</p>
+          <p className="truncate text-left text-xs text-foreground/70">{chapterName}</p>
+        </div>
+
+        <div className="z-20 flex shrink-0 items-center gap-2">
+          <IconTooltipButton
+            label={t('reader.verticalReading')}
+            onClick={() => onSetReadingMode(readingMode !== 'vertical')}
+            icon={readingMode === 'vertical' ? <Rows3 className="size-4" /> : <Columns2 className="size-4" />}
+          />
+
+          <IconTooltipButton
+            label={t('reader.rightToLeft')}
+            onClick={() => onSetReadingDirection(readingDirection !== 'rtl')}
+            icon={
+              <ArrowRight
+                className={`size-4 transition-transform ${readingDirection === 'rtl' ? 'rotate-180' : ''}`}
+              />
+            }
+          />
+
+          <IconTooltipButton
+            label={t('reader.doublePageSpread')}
+            onClick={() => onSetDoublePageSpread(!doublePageSpread)}
+            disabled={readingMode !== 'horizontal' || disableDoublePageSpread}
+            icon={doublePageSpread ? <BookOpenCheck className="size-4" /> : <BookOpen className="size-4" />}
+          />
+
+          <IconTooltipButton
+            label={t('reader.close')}
+            onClick={onClose}
+            className="h-8 w-8 rounded-full transition-colors hover:bg-accent/70"
+            icon={<X className="size-4" />}
+          />
+        </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-0 hidden items-center justify-center px-20 sm:flex">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden h-12 items-center justify-center px-20 sm:flex">
         <div className="min-w-0 text-center">
           <p className="truncate text-sm">{comicName}</p>
           <p className="truncate text-xs text-foreground/70">{chapterName}</p>
         </div>
-      </div>
-
-      <div className="z-20 flex shrink-0 items-center gap-2">
-        <IconTooltipButton
-          label={t('reader.verticalReading')}
-          onClick={() => onSetReadingMode(readingMode !== 'vertical')}
-          icon={readingMode === 'vertical' ? <Rows3 className="size-4" /> : <Columns2 className="size-4" />}
-        />
-
-        <IconTooltipButton
-          label={t('reader.rightToLeft')}
-          onClick={() => onSetReadingDirection(readingDirection !== 'rtl')}
-          icon={
-            <ArrowRight
-              className={`size-4 transition-transform ${readingDirection === 'rtl' ? 'rotate-180' : ''}`}
-            />
-          }
-        />
-
-        <IconTooltipButton
-          label={t('reader.doublePageSpread')}
-          onClick={() => onSetDoublePageSpread(!doublePageSpread)}
-          disabled={readingMode !== 'horizontal' || disableDoublePageSpread}
-          icon={doublePageSpread ? <BookOpenCheck className="size-4" /> : <BookOpen className="size-4" />}
-        />
-
-        <IconTooltipButton
-          label={t('reader.close')}
-          onClick={onClose}
-          className="h-8 w-8 rounded-full transition-colors hover:bg-accent/70"
-          icon={<X className="size-4" />}
-        />
       </div>
     </div>
   )

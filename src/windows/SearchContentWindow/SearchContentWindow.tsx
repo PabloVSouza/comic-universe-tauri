@@ -186,7 +186,7 @@ export const SearchContentWindow: FC<SearchContentWindowProps> = ({ closeSelf })
   const hasResultBlocks = searchErrors.length > 0 || results.length > 0
 
   return (
-    <div className="relative min-h-full bg-background pt-[var(--cu-safe-top,0px)] md:pt-0">
+    <div className="relative min-h-full bg-background pt-[var(--cu-safe-top,0px)]">
       <LoadingOverlay isLoading={isSearching} message={t('searchContent.search.searching')} />
       <div className="grid min-h-full grid-rows-[auto_minmax(0,1fr)]">
         <div className="sticky top-0 z-20 grid gap-px bg-background/72 px-3 pt-4 supports-backdrop-filter:backdrop-blur-xl sm:px-6 sm:pt-4">

@@ -423,10 +423,20 @@ export const useReaderController = () => {
   const currentChapter = chapterIndex >= 0 ? chapters[chapterIndex] : null
   const currentVariantChapterId =
     typeof currentChapter?.data.variantChapterId === 'string' ? currentChapter.data.variantChapterId : undefined
+  const currentPageResolveKey = currentVariantChapterId || chapterId || null
   const pages = useMemo<ResolvedPage[]>(
     () => normalizeChapterPages(currentChapter?.data.pages),
     [currentChapter?.id, currentChapter?.data.pages]
   )
+  const shouldResolvePages =
+    Boolean(chapterId && comicId && currentChapter) &&
+    pages.length === 0 &&
+    !(
+      typeof currentChapter?.data.siteLink === 'string' &&
+      currentChapter.data.siteLink.trim()
+    ) &&
+    Boolean(currentPageResolveKey) &&
+    !pageResolveError
   const legacyReadProgressQuery = useDbFindQuery<ReadProgressData>(
     'read_progress',
     'chapterId',
@@ -444,6 +454,7 @@ export const useReaderController = () => {
         canonicalChaptersQuery.isLoading ||
         chapterMappingsQuery.isLoading ||
         chapterVariantsQuery.isLoading ||
+        shouldResolvePages ||
         isResolvingPages,
       isError:
         worksQuery.isError ||
@@ -464,6 +475,7 @@ export const useReaderController = () => {
       chapterMappingsQuery.isError,
       chapterVariantsQuery.isLoading,
       chapterVariantsQuery.isError,
+      shouldResolvePages,
       isResolvingPages,
       pageResolveError
     ]
@@ -581,12 +593,13 @@ export const useReaderController = () => {
 
   useEffect(() => {
     if (!chapterId || !comicId || !currentChapter) return
-    if (normalizeChapterPages(currentChapter.data.pages).length > 0) return
+    if (pages.length > 0) return
     if (typeof currentChapter.data.siteLink === 'string' && currentChapter.data.siteLink.trim()) return
-    if (triedPageResolveChapterIdsRef.current.has(chapterId)) return
+    if (!currentPageResolveKey) return
+    if (triedPageResolveChapterIdsRef.current.has(currentPageResolveKey)) return
     if (!work) return
 
-    triedPageResolveChapterIdsRef.current.add(chapterId)
+    triedPageResolveChapterIdsRef.current.add(currentPageResolveKey)
     setIsResolvingPages(true)
     setPageResolveError(false)
 
@@ -606,10 +619,55 @@ export const useReaderController = () => {
       const chapterName = typeof currentChapter.data.name === 'string' ? currentChapter.data.name : ''
       const preferredLanguages =
         chapterLanguagePriority.length > 0 ? chapterLanguagePriority : preferredLanguageCodes()
+      const workSourceSiteId =
+        typeof work.data.sourceSiteId === 'string' ? work.data.sourceSiteId.trim() : ''
+      const currentPluginId =
+        typeof currentChapter.data.pluginId === 'string' ? currentChapter.data.pluginId.trim() : ''
+      const currentChapterSiteId =
+        typeof currentChapter.data.siteId === 'string' ? currentChapter.data.siteId.trim() : ''
       const canonicalChapterId =
         (typeof currentChapter.data.canonicalChapterId === 'string' &&
           currentChapter.data.canonicalChapterId) ||
         (canonicalChaptersQuery.data?.some((entry) => entry.id === chapterId) ? chapterId : undefined)
+
+      if (currentVariantChapterId && currentPluginId && currentChapterSiteId && workSourceSiteId) {
+        const directPlugin = installedContentPlugins.find((plugin) => plugin.id === currentPluginId)
+        if (directPlugin) {
+          try {
+            const pagesRaw = await postPlugin<unknown[]>(directPlugin.endpoint, 'getPages', {
+              siteId: workSourceSiteId,
+              chapterSiteId: currentChapterSiteId,
+              languageCodes: preferredLanguages
+            })
+            const directPages = parseFetchedPages(pagesRaw)
+
+            if (directPages.length > 0) {
+              const existingVariant = (chapterVariantsQuery.data ?? []).find(
+                (variant) => variant.id === currentVariantChapterId
+              )
+
+              await dbUpsert(
+                'chapter_variants',
+                {
+                  ...(existingVariant?.data ?? currentChapter.data),
+                  pages: directPages
+                },
+                currentVariantChapterId
+              )
+
+              await queryClient.invalidateQueries({
+                queryKey: restQueryKeys.dbFind('chapter_variants', 'workId', comicId, 5000)
+              })
+
+              setIsResolvingPages(false)
+              setPageResolveError(false)
+              return
+            }
+          } catch {
+            // Fall back to broader plugin search below.
+          }
+        }
+      }
 
       const candidatePlugins = [...installedContentPlugins].sort((a, b) => {
         const aLang = a.languageCodes.map(normalizeLanguageCode)
@@ -631,8 +689,6 @@ export const useReaderController = () => {
 
       for (const plugin of candidatePlugins) {
         let siteId = ''
-        const workSourceSiteId =
-          typeof work.data.sourceSiteId === 'string' ? work.data.sourceSiteId.trim() : ''
         const workPluginId =
           typeof work.data.metadataPluginId === 'string' ? work.data.metadataPluginId.trim() : ''
 
@@ -785,8 +841,11 @@ export const useReaderController = () => {
     void run()
   }, [
     chapterId,
+    currentPageResolveKey,
     comicId,
     currentChapter,
+    currentVariantChapterId,
+    pages.length,
     work,
     pluginsQuery.data,
     chapterVariantsQuery.data,
@@ -1318,6 +1377,7 @@ export const useReaderController = () => {
 
   return {
     chapterPagesQuery,
+    isResolvingPages,
     comicName,
     chapterName,
     readingMode,

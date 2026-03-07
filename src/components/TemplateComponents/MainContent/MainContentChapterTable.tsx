@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-table'
 import { useTranslation } from 'react-i18next'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from 'components/ui/table'
-import { dbDelete, dbFind, dbUpsert, restQueryKeys, type ResolvedChapterRecord } from 'services'
+import { dbDelete, dbFind, dbUpsert, restQueryKeys, type DbRecord, type ResolvedChapterRecord } from 'services'
 import { cn } from 'utils'
 import { MainContentChapterTableBulkActions } from './MainContentChapterTableBulkActions'
 import { buildChapterColumns } from './MainContentChapterTableColumns'
@@ -29,6 +29,13 @@ interface MainContentChapterTableProps {
 const INITIAL_VISIBLE_ROWS = 80
 const LOAD_MORE_STEP = 60
 const SCROLL_THRESHOLD_PX = 240
+type ReadProgressRecordData = {
+  chapterId?: string
+  comicId?: string
+  page?: number
+  totalPages?: number
+  [key: string]: unknown
+}
 
 export const MainContentChapterTable = ({
   entityId,
@@ -59,9 +66,12 @@ export const MainContentChapterTable = ({
   const updateReadState = useCallback(async (chapterIds: string[], read: boolean) => {
     if (!chapterIds.length) return
     setIsUpdatingReadState(true)
+    const readProgressQueryKey = restQueryKeys.dbFind('read_progress', 'comicId', entityId, 5000)
+    const previousReadProgress =
+      queryClient.getQueryData<Array<DbRecord<ReadProgressRecordData>>>(readProgressQueryKey) ?? []
     try {
       if (read) {
-        await Promise.all(
+        const persistedRecords = await Promise.all(
           chapterIds.map((chapterId) =>
             dbUpsert(
               'read_progress',
@@ -75,26 +85,43 @@ export const MainContentChapterTable = ({
             )
           )
         )
+
+        queryClient.setQueryData<Array<DbRecord<ReadProgressRecordData>>>(readProgressQueryKey, (current) => {
+          const next = new Map((current ?? []).map((record) => [record.id, record]))
+          for (const record of persistedRecords) {
+            next.set(record.id, record as DbRecord<ReadProgressRecordData>)
+          }
+          return [...next.values()]
+        })
       } else {
-        await Promise.all(
+        const recordsToDelete = await Promise.all(
           chapterIds.map(async (chapterId) => {
             const existing = await dbFind('read_progress', 'chapterId', chapterId, 1)
             const recordId = existing[0]?.id
             if (recordId) {
               await dbDelete('read_progress', recordId)
             }
+            return recordId
           })
+        )
+
+        const deletedIds = new Set(recordsToDelete.filter((id): id is string => Boolean(id)))
+        queryClient.setQueryData<Array<DbRecord<ReadProgressRecordData>>>(readProgressQueryKey, (current) =>
+          (current ?? []).filter((record) => !deletedIds.has(record.id))
         )
       }
 
-      queryClient.invalidateQueries({
-        queryKey: restQueryKeys.dbFind('read_progress', 'comicId', entityId, 5000)
+      await queryClient.invalidateQueries({
+        queryKey: readProgressQueryKey
       })
       setSelectedIds((current) => {
         const next = new Set(current)
         chapterIds.forEach((id) => next.delete(id))
         return next
       })
+    } catch (error) {
+      queryClient.setQueryData(readProgressQueryKey, previousReadProgress)
+      throw error
     } finally {
       setIsUpdatingReadState(false)
     }

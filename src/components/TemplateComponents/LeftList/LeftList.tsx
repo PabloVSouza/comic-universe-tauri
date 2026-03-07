@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { BgBox } from 'components'
 import { Button } from 'components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from 'components/ui/sheet'
-import { dbDelete, dbFind, restQueryKeys, useDbListQuery, type DbRecord, type WorkData } from 'services'
+import { dbDelete, dbFind, restQueryKeys, useDbListQuery, type WorkData } from 'services'
 import { cn } from 'utils'
 import { useTranslation } from 'react-i18next'
 import { LeftListItem } from './LeftListItem'
@@ -24,14 +24,8 @@ export const LeftList: FC<LeftListProps> = ({
   const worksQuery = useDbListQuery<WorkData>('works', 500, 0)
   const [removingWorkId, setRemovingWorkId] = useState<string | null>(null)
   const [confirmDeleteWorkId, setConfirmDeleteWorkId] = useState<string | null>(null)
-  const [optimisticallyRemovedWorkIds, setOptimisticallyRemovedWorkIds] = useState<Set<string>>(new Set())
   const hasInitializedSelectionRef = useRef(false)
-
-  const visibleWorks = useMemo(
-    () =>
-      (worksQuery.data ?? []).filter((work) => !optimisticallyRemovedWorkIds.has(work.id)),
-    [optimisticallyRemovedWorkIds, worksQuery.data]
-  )
+  const visibleWorks = useMemo(() => worksQuery.data ?? [], [worksQuery.data])
 
   useEffect(() => {
     if (selectedWorkId) {
@@ -51,23 +45,9 @@ export const LeftList: FC<LeftListProps> = ({
   const removeWork = async (workId: string) => {
     if (removingWorkId) return
 
+    const nextSelectedWorkId = visibleWorks.find((work) => work.id !== workId)?.id ?? null
     setRemovingWorkId(workId)
     try {
-      setOptimisticallyRemovedWorkIds((current) => {
-        const next = new Set(current)
-        next.add(workId)
-        return next
-      })
-      queryClient.setQueryData<Array<DbRecord<WorkData>>>(
-        restQueryKeys.dbList('works', 500, 0),
-        (current) => (current ?? []).filter((work) => work.id !== workId)
-      )
-
-      if (selectedWorkId === workId) {
-        hasInitializedSelectionRef.current = true
-        onSelectWork?.(null)
-      }
-
       const [comics, chaptersByWork, canonicalChapters, chapterVariants, chapterMappings, readProgress] =
         await Promise.all([
           dbFind<Record<string, unknown>>('comics', 'workId', workId, 5000),
@@ -114,12 +94,13 @@ export const LeftList: FC<LeftListProps> = ({
         queryClient.invalidateQueries({ queryKey: ['rest', 'db', 'find', 'chapter_mappings'] }),
         queryClient.invalidateQueries({ queryKey: ['rest', 'db', 'find', 'read_progress'] })
       ])
+      await worksQuery.refetch()
+
+      if (selectedWorkId === workId) {
+        hasInitializedSelectionRef.current = true
+        onSelectWork?.(nextSelectedWorkId)
+      }
     } catch (error) {
-      setOptimisticallyRemovedWorkIds((current) => {
-        const next = new Set(current)
-        next.delete(workId)
-        return next
-      })
       await queryClient.invalidateQueries({ queryKey: restQueryKeys.dbList('works', 500, 0) })
       throw error
     } finally {

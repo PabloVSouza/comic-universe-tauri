@@ -34,6 +34,11 @@ fn get_machine_hostname() -> String {
 }
 
 #[tauri::command]
+fn get_runtime_platform() -> &'static str {
+    std::env::consts::OS
+}
+
+#[tauri::command]
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn minimize_main_window(app_handle: tauri::AppHandle) -> Result<(), String> {
     let window = app_handle
@@ -454,6 +459,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_machine_hostname,
+            get_runtime_platform,
             minimize_main_window
         ])
         .setup(setup_app)

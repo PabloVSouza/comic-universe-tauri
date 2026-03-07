@@ -290,7 +290,7 @@ export const Home: FC = () => {
   }
 
   return (
-    <>
+    <div className="size-full">
       <div className="grid size-full grid-cols-1 grid-rows-[calc(3.5rem+var(--cu-safe-top,0px))_minmax(0,1fr)] gap-px md:grid-cols-[15rem_minmax(0,1fr)] md:grid-rows-[calc(3.5rem+var(--cu-safe-top,0px))_3.5rem_minmax(0,1fr)]">
         <TopBar className="col-start-1 row-start-1 md:col-span-2" />
         <LeftNav
@@ -322,13 +322,13 @@ export const Home: FC = () => {
         />
 
         <aside
-          className={`relative h-full w-[85vw] max-w-[20rem] border-r border-border/50 bg-background pt-[var(--cu-safe-top,0px)] transition-transform duration-200 ease-out will-change-transform ${
+          className={`relative h-full w-[85vw] max-w-[20rem] border-r border-border/50 bg-background transition-transform duration-200 ease-out will-change-transform ${
             isMobileListOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="grid h-full grid-rows-[3.5rem_minmax(0,1fr)] gap-px">
+          <div className="grid h-full grid-rows-[calc(3.5rem+var(--cu-safe-top,0px))_minmax(0,1fr)] gap-px">
             <LeftNav
-              className="row-start-1"
+              className="row-start-1 self-end"
               onNavigate={() => setMobileListOpen(false)}
             />
             <LeftList
@@ -342,6 +342,6 @@ export const Home: FC = () => {
           </div>
         </aside>
       </div>
-    </>
+    </div>
   )
 }

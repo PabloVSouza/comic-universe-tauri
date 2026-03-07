@@ -1,5 +1,5 @@
-import { FC, MutableRefObject } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
+import { FC, MutableRefObject } from 'react'
 
 interface VerticalReaderPage {
   key: string
@@ -9,8 +9,6 @@ interface VerticalReaderPage {
 
 interface VerticalReaderProps {
   pages: VerticalReaderPage[]
-  isMobileViewport: boolean
-  desktopPageHeight: number
   setScrollContainerRef: (node: HTMLDivElement | null) => void
   pageRefs: MutableRefObject<Array<HTMLDivElement | null>>
   onPreviousPage: () => void
@@ -22,8 +20,6 @@ interface VerticalReaderProps {
 
 export const VerticalReader: FC<VerticalReaderProps> = ({
   pages,
-  isMobileViewport,
-  desktopPageHeight,
   setScrollContainerRef,
   pageRefs,
   onPreviousPage,
@@ -43,29 +39,22 @@ export const VerticalReader: FC<VerticalReaderProps> = ({
                 pageRefs.current[index] = node
               }}
               data-page-index={index}
-              className={
-                isMobileViewport
-                  ? 'flex w-full items-center justify-center'
-                  : 'flex h-full w-full shrink-0 items-center justify-center overflow-hidden'
-              }
-              style={
-                !isMobileViewport && desktopPageHeight > 0
-                  ? { height: `${desktopPageHeight}px` }
-                  : undefined
-              }
+              className="flex w-full items-start justify-center"
             >
-              {page.src ? (
-                <img
-                  src={page.src}
-                  alt={page.alt}
-                  data-reader-zoom-source="true"
-                  className={isMobileViewport ? 'h-auto w-full object-contain' : 'h-full w-full object-contain'}
-                />
-              ) : (
-                <div className="grid h-full w-full place-items-center text-xs text-foreground/60">
-                  {noPagesLabel}
-                </div>
-              )}
+              <div className="w-full md:max-w-5xl">
+                {page.src ? (
+                  <img
+                    src={page.src}
+                    alt={page.alt}
+                    data-reader-zoom-source="true"
+                    className="h-auto w-full object-contain"
+                  />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-xs text-foreground/60">
+                    {noPagesLabel}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
