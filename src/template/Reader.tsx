@@ -138,6 +138,7 @@ export const Reader: FC = () => {
             <HorizontalReader
               slides={horizontalSlides}
               currentSlideIndex={currentHorizontalSlideIndex}
+              readingDirection={readingDirection}
               viewportWidth={horizontalViewportWidth}
               setViewportRef={setHorizontalViewportRef}
               onPreviousPage={goToPreviousPage}

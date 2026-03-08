@@ -943,10 +943,7 @@ export const useReaderController = () => {
   const horizontalSlides = useMemo<HorizontalReaderSlide[]>(() => {
     if (!pages.length) return []
 
-    const orderedIndexes =
-      readingDirection === 'rtl'
-        ? Array.from({ length: pages.length }, (_, idx) => pages.length - 1 - idx)
-        : Array.from({ length: pages.length }, (_, idx) => idx)
+    const orderedIndexes = Array.from({ length: pages.length }, (_, idx) => idx)
 
     const slides: HorizontalReaderSlide[] = []
 
@@ -961,8 +958,10 @@ export const useReaderController = () => {
         pageAspectMap[nextIndex] === 'portrait'
 
       const slideIndexes = canPair ? [currentIndex, nextIndex] : [currentIndex]
+      const displayIndexes =
+        canPair && readingDirection === 'rtl' ? [...slideIndexes].reverse() : slideIndexes
 
-      const pagesForSlide = slideIndexes.map((originalIndex) => {
+      const pagesForSlide = displayIndexes.map((originalIndex) => {
         const page = pages[originalIndex]
         const src = normalizeImageSrc(page.url)
         return {
@@ -983,6 +982,16 @@ export const useReaderController = () => {
 
     return slides
   }, [pages, readingDirection, canUseDoublePageSpread, pageAspectMap])
+
+  const getHorizontalSlideAnchorIndex = useCallback(
+    (slide: HorizontalReaderSlide | undefined): number | null => {
+      if (!slide || slide.pages.length === 0) return null
+      const anchorPage =
+        readingDirection === 'rtl' ? slide.pages[slide.pages.length - 1] : slide.pages[0]
+      return anchorPage?.originalIndex ?? null
+    },
+    [readingDirection]
+  )
 
   const currentOriginalIndex = useMemo(
     () => Math.max(0, Math.min(safePage - 1, Math.max(0, pages.length - 1))),
@@ -1037,15 +1046,12 @@ export const useReaderController = () => {
     if (readingMode === 'horizontal') {
       if (currentHorizontalSlideIndex > 0) {
         const previousSlide = horizontalSlides[currentHorizontalSlideIndex - 1]
-        const targetOriginalIndex = previousSlide.pages[0].originalIndex
+        const targetOriginalIndex = getHorizontalSlideAnchorIndex(previousSlide)
+        if (targetOriginalIndex === null) return
         setCurrentPage(targetOriginalIndex + 1)
         return
       }
-      if (readingDirection === 'rtl') {
-        goToChapter(chapterIndex + 1)
-      } else {
-        goToChapter(chapterIndex - 1)
-      }
+      goToChapter(chapterIndex - 1)
       return
     }
 
@@ -1061,6 +1067,7 @@ export const useReaderController = () => {
     readingDirection,
     currentHorizontalSlideIndex,
     horizontalSlides,
+    getHorizontalSlideAnchorIndex,
     setCurrentPage,
     goToChapter,
     chapterIndex
@@ -1072,15 +1079,12 @@ export const useReaderController = () => {
     if (readingMode === 'horizontal') {
       if (currentHorizontalSlideIndex < horizontalSlides.length - 1) {
         const nextSlide = horizontalSlides[currentHorizontalSlideIndex + 1]
-        const targetOriginalIndex = nextSlide.pages[0].originalIndex
+        const targetOriginalIndex = getHorizontalSlideAnchorIndex(nextSlide)
+        if (targetOriginalIndex === null) return
         setCurrentPage(targetOriginalIndex + 1)
         return
       }
-      if (readingDirection === 'rtl') {
-        goToChapter(chapterIndex - 1)
-      } else {
-        goToChapter(chapterIndex + 1)
-      }
+      goToChapter(chapterIndex + 1)
       return
     }
 
@@ -1096,6 +1100,7 @@ export const useReaderController = () => {
     readingDirection,
     currentHorizontalSlideIndex,
     horizontalSlides,
+    getHorizontalSlideAnchorIndex,
     setCurrentPage,
     goToChapter,
     chapterIndex
@@ -1310,12 +1315,22 @@ export const useReaderController = () => {
         return
       }
 
+      const useRtlHorizontalKeys = readingMode === 'horizontal' && readingDirection === 'rtl'
+
       if (event.key === 'ArrowLeft') {
-        goToPreviousPage()
+        if (useRtlHorizontalKeys) {
+          goToNextPage()
+        } else {
+          goToPreviousPage()
+        }
       }
 
       if (event.key === 'ArrowRight') {
-        goToNextPage()
+        if (useRtlHorizontalKeys) {
+          goToPreviousPage()
+        } else {
+          goToNextPage()
+        }
       }
 
       if (event.key === 'ArrowUp' && readingMode === 'vertical') {
@@ -1329,7 +1344,7 @@ export const useReaderController = () => {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [readingMode, goToPreviousPage, goToNextPage, navigate])
+  }, [readingMode, readingDirection, goToPreviousPage, goToNextPage, navigate])
 
   const setReadingModeAndPersist = async (vertical: boolean) => {
     const next = vertical ? 'vertical' : 'horizontal'

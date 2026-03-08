@@ -16,6 +16,7 @@ export interface HorizontalReaderSlide {
 interface HorizontalReaderProps {
   slides: HorizontalReaderSlide[]
   currentSlideIndex: number
+  readingDirection: 'ltr' | 'rtl'
   viewportWidth: number
   setViewportRef: (node: HTMLDivElement | null) => void
   onPreviousPage: () => void
@@ -28,6 +29,7 @@ interface HorizontalReaderProps {
 export const HorizontalReader: FC<HorizontalReaderProps> = ({
   slides,
   currentSlideIndex,
+  readingDirection,
   viewportWidth,
   setViewportRef,
   onPreviousPage,
@@ -36,13 +38,17 @@ export const HorizontalReader: FC<HorizontalReaderProps> = ({
   nextPageLabel,
   noPagesLabel
 }) => {
+  const renderedSlides = readingDirection === 'rtl' ? [...slides].reverse() : slides
+  const displaySlideIndex =
+    readingDirection === 'rtl' ? Math.max(0, renderedSlides.length - 1 - currentSlideIndex) : currentSlideIndex
+
   return (
     <div ref={setViewportRef} className="relative h-full select-none overflow-hidden">
       <div
         className="flex h-full transition-transform duration-300 ease-out will-change-transform"
-        style={{ transform: `translate3d(-${currentSlideIndex * viewportWidth}px,0,0)` }}
+        style={{ transform: `translate3d(-${displaySlideIndex * viewportWidth}px,0,0)` }}
       >
-        {slides.map((slide) => {
+        {renderedSlides.map((slide) => {
           const slideIsDouble = slide.pages.length === 2
           return (
             <div
